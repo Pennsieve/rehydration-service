@@ -1,3 +1,5 @@
+variable "aws_account" {}
+
 variable "environment_name" {}
 
 variable "service_name" {}

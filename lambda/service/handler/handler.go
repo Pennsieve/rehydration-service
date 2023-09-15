@@ -20,6 +20,7 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		log.Println("awsRequestID", lc.AwsRequestID)
 	}
 
+	// Get from SSM
 	TaskDefinitionArn := os.Getenv("TASK_DEF_ARN")
 	subIdStr := os.Getenv("SUBNET_IDS")
 	SubNetIds := strings.Split(subIdStr, ",")

@@ -98,7 +98,7 @@ data "aws_iam_policy_document" "rehydrate_iam_policy_document" {
   }
 
   statement {
-    sid    = "UploadLambdaPermissions"
+    sid    = "RehydrateLambdaPermissions"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",

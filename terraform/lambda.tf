@@ -11,7 +11,7 @@ resource "aws_lambda_function" "fargate_trigger_lambda" {
   timeout          = 30
   memory_size      = 128
   s3_bucket         = var.lambda_bucket
-  s3_key            = "${var.service_name}/trigger/rehydrate-trigger-${var.image_tag}.zip"
+  s3_key            = "${var.service_name}/service/rehydration-service-${var.image_tag}.zip"
 
   vpc_config {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)

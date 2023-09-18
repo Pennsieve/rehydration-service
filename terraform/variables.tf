@@ -14,7 +14,7 @@ variable "container_cpu" {
 }
 
 variable "image_url" {
-  default = "pennsieve/upload_move_files"
+  default = "pennsieve/rehydrate"
 }
 
 variable "task_memory" {

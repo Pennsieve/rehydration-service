@@ -15,7 +15,7 @@ resource "aws_lambda_function" "fargate_trigger_lambda" {
 
   vpc_config {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
-    security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.rehydrate_security_group_id]
+    security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.rehydrate_service_security_group_id]
   }
 
   environment {

@@ -18,6 +18,9 @@ go-get:
 	cd $(WORKING_DIR)/fargate/rehydrate; \
 		go get github.com/pennsieve/rehydration-service/rehydrate
 
+test-ci:
+	@echo ""			
+
 package:
 	@echo ""
 	@echo "***********************"

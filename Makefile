@@ -19,7 +19,11 @@ go-get:
 		go get github.com/pennsieve/rehydration-service/rehydrate
 
 test-ci:
-	@echo ""			
+	@echo ""
+
+# Spin down active docker containers.
+docker-clean:		
+	@echo ""
 
 package:
 	@echo ""
@@ -37,8 +41,8 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/fargate/rehydrate; \
-		docker build -t pennsieve/rehydrate:${VERSION} . ;\
-		docker push pennsieve/rehydrate:${VERSION} ;\
+		docker build -t pennsieve/rehydrate:${IMAGE_TAG} . ;\
+		docker push pennsieve/rehydrate:${IMAGE_TAG} ;\
 
 publish:
 	@make package

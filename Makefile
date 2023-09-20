@@ -1,5 +1,6 @@
 .PHONY: help clean test package publish test-ci
 
+LAMBDA_BUCKET ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR   ?= "$(shell pwd)"
 SERVICE_NAME  ?= "rehydration-service"
 SERVICE_PACKAGE_NAME ?= "rehydration-service-${IMAGE_TAG}.zip"

@@ -1,5 +1,8 @@
 data "aws_region" "current_region" {}
 
+data "aws_caller_identity" "current" {
+}
+
 # Import Account Data
 data "terraform_remote_state" "account" {
   backend = "s3"

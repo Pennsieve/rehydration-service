@@ -1,6 +1,6 @@
 # REHYDRATE-FARGATE-TASK   #
 ##############################
-resource "aws_iam_role" "fargate_task_iam_role" {
+resource "aws_iam_role" "rehydrate_fargate_task_iam_role" {
   name = "${var.environment_name}-${var.service_name}-fargate-task-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path = "/service-roles/"
 
@@ -21,12 +21,12 @@ EOF
 
 }
 
-resource "aws_iam_role_policy_attachment" "fargate_iam_role_policy_attachment" {
-  role       = aws_iam_role.fargate_task_iam_role.id
-  policy_arn = aws_iam_policy.iam_policy.arn
+resource "aws_iam_role_policy_attachment" "rehydrate_fargate_iam_role_policy_attachment" {
+  role       = aws_iam_role.rehydrate_fargate_task_iam_role.id
+  policy_arn = aws_iam_policy.rehydrate_iam_policy.arn
 }
 
-resource "aws_iam_policy" "iam_policy" {
+resource "aws_iam_policy" "rehydrate_iam_policy" {
   name   = "${var.environment_name}-${var.service_name}-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   policy = data.aws_iam_policy_document.rehydrate_fargate_iam_policy_document.json
 }

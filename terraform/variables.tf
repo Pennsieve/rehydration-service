@@ -34,7 +34,7 @@ variable "task_cpu" {
 }
 
 variable "tier" {
-  default = "rehydrate"
+  default = "rehydration"
 }
 
 variable "lambda_bucket" {

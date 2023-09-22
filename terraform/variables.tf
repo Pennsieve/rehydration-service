@@ -1,8 +1,16 @@
 variable "aws_account" {}
 
+variable "aws_region" {}
+
 variable "environment_name" {}
 
 variable "service_name" {}
+
+variable "vpc_name" {}
+
+variable "image_tag" {
+  default = "latest"
+}
 
 // Fargate Task
 variable "container_memory" {
@@ -25,12 +33,8 @@ variable "task_cpu" {
   default = "512"
 }
 
-variable "image_tag" {
-  default = "latest"
-}
-
 variable "tier" {
-  default = "rehydrate"
+  default = "rehydration"
 }
 
 variable "lambda_bucket" {

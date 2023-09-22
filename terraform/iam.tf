@@ -1,6 +1,6 @@
-# REHYDRATE-FARGATE-TASK   #
+# REHYDRATION-FARGATE-TASK   #
 ##############################
-resource "aws_iam_role" "fargate_task_iam_role" {
+resource "aws_iam_role" "rehydration_fargate_task_iam_role" {
   name = "${var.environment_name}-${var.service_name}-fargate-task-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path = "/service-roles/"
 
@@ -21,17 +21,17 @@ EOF
 
 }
 
-resource "aws_iam_role_policy_attachment" "fargate_iam_role_policy_attachment" {
-  role       = aws_iam_role.fargate_task_iam_role.id
-  policy_arn = aws_iam_policy.iam_policy.arn
+resource "aws_iam_role_policy_attachment" "rehydration_fargate_iam_role_policy_attachment" {
+  role       = aws_iam_role.rehydration_fargate_task_iam_role.id
+  policy_arn = aws_iam_policy.rehydration_iam_policy.arn
 }
 
-resource "aws_iam_policy" "iam_policy" {
+resource "aws_iam_policy" "rehydration_iam_policy" {
   name   = "${var.environment_name}-${var.service_name}-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  policy = data.aws_iam_policy_document.rehydrate_fargate_iam_policy_document.json
+  policy = data.aws_iam_policy_document.rehydration_fargate_iam_policy_document.json
 }
 
-data "aws_iam_policy_document" "rehydrate_fargate_iam_policy_document" {
+data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
 
   statement {
     effect = "Allow"
@@ -46,11 +46,11 @@ data "aws_iam_policy_document" "rehydrate_fargate_iam_policy_document" {
   }
 }
 
-# REHYDRATE-LAMBDA   #
+# REHYDRATION-LAMBDA   #
 ##############################
 
-resource "aws_iam_role" "rehydrate_lambda_role" {
-  name = "${var.environment_name}-${var.service_name}-rehydrate_lambda_role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+resource "aws_iam_role" "rehydration_lambda_role" {
+  name = "${var.environment_name}-${var.service_name}-rehydration_lambda_role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
   assume_role_policy = <<EOF
 {
@@ -69,18 +69,18 @@ resource "aws_iam_role" "rehydrate_lambda_role" {
 EOF
 }
 
-resource "aws_iam_role_policy_attachment" "rehydrate_lambda_iam_policy_attachment" {
-  role       = aws_iam_role.rehydrate_lambda_role.name
-  policy_arn = aws_iam_policy.rehydrate_lambda_iam_policy.arn
+resource "aws_iam_role_policy_attachment" "rehydration_lambda_iam_policy_attachment" {
+  role       = aws_iam_role.rehydration_lambda_role.name
+  policy_arn = aws_iam_policy.rehydration_lambda_iam_policy.arn
 }
 
-resource "aws_iam_policy" "rehydrate_lambda_iam_policy" {
-  name   = "${var.environment_name}-${var.service_name}-rehydrate-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+resource "aws_iam_policy" "rehydration_lambda_iam_policy" {
+  name   = "${var.environment_name}-${var.service_name}-rehydration-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path   = "/"
-  policy = data.aws_iam_policy_document.rehydrate_iam_policy_document.json
+  policy = data.aws_iam_policy_document.rehydration_iam_policy_document.json
 }
 
-data "aws_iam_policy_document" "rehydrate_iam_policy_document" {
+data "aws_iam_policy_document" "rehydration_iam_policy_document" {
 
   statement {
     sid    = "SecretsManagerPermissions"
@@ -98,7 +98,7 @@ data "aws_iam_policy_document" "rehydrate_iam_policy_document" {
   }
 
   statement {
-    sid    = "RehydrateLambdaPermissions"
+    sid    = "RehydrationLambdaPermissions"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",

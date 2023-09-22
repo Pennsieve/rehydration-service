@@ -11,7 +11,7 @@
     "environment": [
       { "name" : "ENVIRONMENT", "value": "${environment_name}" },
       { "name" : "ENV", "value": "${environment_name}" },
-      { "name" : "REGION", "value": "${aws_region}" },
+      { "name" : "REGION", "value": "${aws_region}" }
     ],
     "name": "${tier}",
     "image": "${image_url}:${image_tag}",

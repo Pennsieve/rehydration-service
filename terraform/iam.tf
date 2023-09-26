@@ -32,7 +32,21 @@ resource "aws_iam_policy" "rehydration_iam_policy" {
 }
 
 data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
+  statement {
+    sid    = "SecretsManagerPermissions"
+    effect = "Allow"
 
+    actions = [
+      "kms:Decrypt",
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn,
+      data.aws_kms_key.ssm_kms_key.arn,
+    ]
+  }
+  
   statement {
     effect = "Allow"
 

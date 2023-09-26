@@ -58,6 +58,19 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
       "*",
     ]
   }
+
+  statement {
+    sid    = "RehydrateFargateTaskPermissions"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutDestination",
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams"
+    ]
+    resources = ["*"]
+  }
 }
 
 # REHYDRATION-LAMBDA   #

@@ -33,7 +33,7 @@ resource "aws_iam_policy" "rehydration_iam_policy" {
 
 data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
   statement {
-    sid    = "SecretsManagerPermissions"
+    sid    = "TaskSecretsManagerPermissions"
     effect = "Allow"
 
     actions = [
@@ -48,19 +48,18 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
   }
   
   statement {
+    sid    = "TaskS3Permissions"
     effect = "Allow"
-
     actions = [
       "s3:List*",
     ]
-
     resources = [
       "*",
     ]
   }
 
   statement {
-    sid    = "RehydrateFargateTaskPermissions"
+    sid    = "TaskLogPermissions"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",

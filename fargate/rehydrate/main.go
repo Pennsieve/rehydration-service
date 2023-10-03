@@ -26,14 +26,14 @@ func main() {
 		log.Fatalf("err converting versionId to int")
 	}
 
-	pennsiveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: getApiHost(os.Getenv("ENV"))})
-	datasetByVersionReponse, err := pennsiveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
+	pennsieveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: getApiHost(os.Getenv("ENV"))})
+	datasetByVersionReponse, err := pennsieveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}
 	log.Println(datasetByVersionReponse)
 
-	datasetMetadataByVersionReponse, err := pennsiveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
+	datasetMetadataByVersionReponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}

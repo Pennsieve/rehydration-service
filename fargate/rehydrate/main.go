@@ -5,9 +5,12 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 )
+
+var rehydrateProcessWg sync.WaitGroup
 
 func main() {
 	log.Println("Running rehydrate task")
@@ -38,6 +41,19 @@ func main() {
 		log.Fatalf("error retrieving dataset by version")
 	}
 	log.Println(datasetMetadataByVersionReponse)
+
+	log.Println("Starting Rehaydration process")
+	for i := 1; i <= 20; i++ {
+		rehydrateProcessWg.Add(1)
+
+		go func(i int) {
+			defer rehydrateProcessWg.Done()
+			worker(i)
+		}(i)
+	}
+
+	rehydrateProcessWg.Wait()
+	log.Println("Rehaydration complete")
 }
 
 func getApiHost(env string) string {
@@ -46,4 +62,10 @@ func getApiHost(env string) string {
 	} else {
 		return "https://api.pennsieve.io"
 	}
+}
+
+func worker(w int) {
+	log.Println("starting ", w)
+	log.Printf("%v done", w)
+
 }

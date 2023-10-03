@@ -41,6 +41,7 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	cluster := os.Getenv("CLUSTER_ARN")
 	SecurityGroup := os.Getenv("SECURITY_GROUP")
 	envValue := os.Getenv("ENV")
+	TaskDefContainerName := os.Getenv("TASK_DEF_CONTAINER_NAME")
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -49,7 +50,6 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 
 	client := ecs.NewFromConfig(cfg)
 	log.Println("Initiating new Rehydrate Fargate Task.")
-	containerName := "rehydration"
 	datasetIDKey := "DATASET_ID"
 	datasetIDValue := strconv.Itoa(int(dataset.ID))
 	datasetVersionIDKey := "DATASET_VERSION_ID"
@@ -69,7 +69,7 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		Overrides: &types.TaskOverride{
 			ContainerOverrides: []types.ContainerOverride{
 				{
-					Name: &containerName,
+					Name: &TaskDefContainerName,
 					Environment: []types.KeyValuePair{
 						{
 							Name:  &datasetIDKey,

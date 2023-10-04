@@ -7,8 +7,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
-	"github.com/pennsieve/pennsieve-go/pkg/pennsieve/models/discover"
 )
 
 func main() {
@@ -33,28 +34,41 @@ func main() {
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}
-	log.Println(datasetByVersionReponse)
+	log.Println(datasetByVersionReponse) // TODO: remove
 
 	datasetMetadataByVersionReponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}
-	log.Println(datasetMetadataByVersionReponse)
+	log.Println(datasetMetadataByVersionReponse) // TODO: remove
+
+	// Initializing environment
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Fatalf("LoadDefaultConfig: %v\n", err)
+	}
+	rehydrator := NewRehydrator(s3.NewFromConfig(cfg))
 
 	numberOfJobs := len(datasetMetadataByVersionReponse.Files)
-	jobs := make(chan discover.DatasetFile, numberOfJobs)
+	jobs := make(chan *Rehydration, numberOfJobs)
 	results := make(chan string, numberOfJobs)
 
 	log.Println("Starting Rehydration process")
+
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(i, jobs, results)
+		go worker(i, jobs, results, rehydrator)
 	}
 
 	// create work
 	for _, j := range datasetMetadataByVersionReponse.Files {
-		jobs <- j
+		rehydratedPath := "rehydrated/"
+		r := NewRehydration(
+			SrcObject{SourceBucketUri: datasetByVersionReponse.Uri, FileSize: j.Size, Filename: j.Name},
+			DestObject{DestinationBucketUri: fmt.Sprintf("%s%s",
+				datasetByVersionReponse.Uri, rehydratedPath)})
+		jobs <- r
 	}
 	close(jobs)
 
@@ -74,12 +88,13 @@ func getApiHost(env string) string {
 	}
 }
 
-func worker(w int, jobs <-chan discover.DatasetFile, results chan<- string) {
+func worker(w int, jobs <-chan *Rehydration, results chan<- string, rehydrator S3Process) {
 	for j := range jobs {
 		log.Println("starting ", w)
 		log.Println("processing ", j)
 
+		rehydrator.Copy(j.Src, j.Dest)
+
 		results <- fmt.Sprintf("%v done", w)
 	}
-
 }

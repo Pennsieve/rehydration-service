@@ -27,6 +27,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
       SECURITY_GROUP = data.terraform_remote_state.platform_infrastructure.outputs.rehydration_fargate_security_group_id,
       REGION = var.aws_region,
       LOG_LEVEL = "info",
+      TASK_DEF_CONTAINER_NAME = var.tier,
     }
   }
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -16,6 +17,7 @@ func main() {
 	log.Println("Running rehydrate task")
 	ctx := context.Background()
 
+	// TODO: remove
 	log.Println("DATASET_ID", os.Getenv("DATASET_ID"))
 	log.Println("DATASET_VERSION_ID", os.Getenv("DATASET_VERSION_ID"))
 	log.Println("ENV", os.Getenv("ENV"))
@@ -47,28 +49,34 @@ func main() {
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
 	}
-	rehydrator := NewRehydrator(s3.NewFromConfig(cfg))
+	processor := NewRehydrator(s3.NewFromConfig(cfg))
 
 	numberOfJobs := len(datasetMetadataByVersionReponse.Files)
 	jobs := make(chan *Rehydration, numberOfJobs)
 	results := make(chan string, numberOfJobs)
 
 	log.Println("Starting Rehydration process")
-
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(i, jobs, results, rehydrator)
+		go worker(i, jobs, results, processor)
 	}
 
 	// create work
 	for _, j := range datasetMetadataByVersionReponse.Files {
-		rehydratedPath := "rehydrated/"
-		r := NewRehydration(
-			SrcObject{SourceBucketUri: datasetByVersionReponse.Uri, FileSize: j.Size, Filename: j.Name},
-			DestObject{DestinationBucketUri: fmt.Sprintf("%s%s",
-				datasetByVersionReponse.Uri, rehydratedPath)})
-		jobs <- r
+		jobs <- NewRehydration(
+			SrcObject{
+				DatasetUri: datasetByVersionReponse.Uri,
+				Size:       j.Size,
+				Name:       j.Name,
+				VersionId:  j.S3VersionID,
+				Path:       j.Path},
+			DestObject{
+				BucketUri: createDestinationBucketUri(datasetByVersionReponse.ID, datasetByVersionReponse.Uri),
+				Key: createDestinationKey(datasetByVersionReponse.ID,
+					datasetByVersionReponse.Version,
+					j.Path),
+			})
 	}
 	close(jobs)
 
@@ -88,13 +96,27 @@ func getApiHost(env string) string {
 	}
 }
 
-func worker(w int, jobs <-chan *Rehydration, results chan<- string, rehydrator S3Process) {
+func worker(w int, jobs <-chan *Rehydration, results chan<- string, processor ObjectProcessor) {
 	for j := range jobs {
-		log.Println("starting ", w)
-		log.Println("processing ", j)
-
-		rehydrator.Copy(j.Src, j.Dest)
-
+		log.Println("processing on worker: ", w)
+		err := processor.Copy(j.Src, j.Dest)
+		if err != nil {
+			results <- err.Error() // TODO: test code path
+		}
 		results <- fmt.Sprintf("%v done", w)
 	}
+}
+
+func createDestinationKey(id int32, version int32, path string) string {
+	return fmt.Sprintf("rehydrated/%s/%s/%s",
+		strconv.Itoa(int(id)), strconv.Itoa(int(version)), path)
+}
+
+func createDestinationBucketUri(id int32, datasetUri string) string {
+	idString := strconv.Itoa(int(id))
+	destinationBucketUri, _, found := strings.Cut(datasetUri, idString)
+	if !found {
+		log.Fatalf("error creating bucket Uri")
+	}
+	return destinationBucketUri
 }

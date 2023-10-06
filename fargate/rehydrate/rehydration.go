@@ -2,8 +2,8 @@ package main
 
 import "fmt"
 
-// SrcObject implements Src
-type SrcObject struct {
+// SourceObject implements Source
+type SourceObject struct {
 	DatasetUri     string
 	DatasetVersion int32
 	Size           int64
@@ -12,49 +12,48 @@ type SrcObject struct {
 	Path           string
 }
 
-// TODO: should this Uri returned also include the path?
-func (s SrcObject) GetUri() string {
+// GetUri returns the dataset Uri
+func (s SourceObject) GetUri() string {
 	return s.DatasetUri
 }
 
-func (s SrcObject) GetSize() int64 {
+func (s SourceObject) GetSize() int64 {
 	return s.Size
 }
 
-func (s SrcObject) GetName() string {
+func (s SourceObject) GetName() string {
 	return s.Name
 }
 
-func (s SrcObject) GetPath() string {
+func (s SourceObject) GetPath() string {
 	return s.Path
 }
 
-func (s SrcObject) GetFullUri() string {
+func (s SourceObject) GetFullUri() string {
 	return fmt.Sprintf("%s%s?versionId=%s",
 		s.GetUri(), s.GetPath(), s.VersionId)
-
 }
 
-// DestObject implements Dest
-type DestObject struct {
+// DestinationObject implements Destination
+type DestinationObject struct {
 	BucketUri string
 	Key       string
 }
 
-func (d DestObject) GetBucketUri() string {
+func (d DestinationObject) GetBucketUri() string {
 	return d.BucketUri
 }
 
-func (d DestObject) GetKey() string {
+func (d DestinationObject) GetKey() string {
 	return d.Key
 }
 
-// rehydration composite object - Src and Dest
+// rehydration composite object - Source and Destination
 type Rehydration struct {
-	Src  Src
-	Dest Dest
+	Src  Source
+	Dest Destination
 }
 
-func NewRehydration(src SrcObject, dest DestObject) *Rehydration {
+func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
 	return &Rehydration{src, dest}
 }

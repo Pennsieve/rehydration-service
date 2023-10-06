@@ -6,11 +6,11 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
+	"github.com/pennsieve/rehydration-service/rehydrate/utils"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 		log.Fatalf("error converting versionId to int")
 	}
 
-	pennsieveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: getApiHost(os.Getenv("ENV"))})
+	pennsieveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: utils.GetApiHost(os.Getenv("ENV"))})
 	datasetByVersionReponse, err := pennsieveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
@@ -52,33 +52,37 @@ func main() {
 	processor := NewRehydrator(s3.NewFromConfig(cfg))
 
 	numberOfJobs := len(datasetMetadataByVersionReponse.Files)
-	jobs := make(chan *Rehydration, numberOfJobs)
+	rehydrations := make(chan *Rehydration, numberOfJobs)
 	results := make(chan string, numberOfJobs)
 
 	log.Println("Starting Rehydration process")
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(i, jobs, results, processor)
+		go worker(ctx, i, rehydrations, results, processor)
 	}
 
 	// create work
 	for _, j := range datasetMetadataByVersionReponse.Files {
-		jobs <- NewRehydration(
-			SrcObject{
+		destinationBucketUri, err := utils.CreateDestinationBucketUri(datasetByVersionReponse.ID, datasetByVersionReponse.Uri)
+		if err != nil {
+			log.Fatalf("error creating destination bucket uri")
+		}
+		rehydrations <- NewRehydration(
+			SourceObject{
 				DatasetUri: datasetByVersionReponse.Uri,
 				Size:       j.Size,
 				Name:       j.Name,
 				VersionId:  j.S3VersionID,
 				Path:       j.Path},
-			DestObject{
-				BucketUri: createDestinationBucketUri(datasetByVersionReponse.ID, datasetByVersionReponse.Uri),
-				Key: createDestinationKey(datasetByVersionReponse.ID,
+			DestinationObject{
+				BucketUri: destinationBucketUri,
+				Key: utils.CreateDestinationKey(datasetByVersionReponse.ID,
 					datasetByVersionReponse.Version,
 					j.Path),
 			})
 	}
-	close(jobs)
+	close(rehydrations)
 
 	// wait for the done signal
 	for j := 1; j <= numberOfJobs; j++ {
@@ -88,35 +92,15 @@ func main() {
 	log.Println("Rehydration complete")
 }
 
-func getApiHost(env string) string {
-	if os.Getenv("ENV") == "dev" {
-		return "https://api.pennsieve.net"
-	} else {
-		return "https://api.pennsieve.io"
-	}
-}
-
-func worker(w int, jobs <-chan *Rehydration, results chan<- string, processor ObjectProcessor) {
-	for j := range jobs {
+// processes rehydrations
+func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- string, processor ObjectProcessor) {
+	for r := range rehydrations {
 		log.Println("processing on worker: ", w)
-		err := processor.Copy(j.Src, j.Dest)
+		err := processor.Copy(ctx, r.Src, r.Dest)
 		if err != nil {
-			results <- err.Error() // TODO: test code path
+			results <- err.Error()
+		} else {
+			results <- fmt.Sprintf("%v done", w)
 		}
-		results <- fmt.Sprintf("%v done", w)
 	}
-}
-
-func createDestinationKey(id int32, version int32, path string) string {
-	return fmt.Sprintf("rehydrated/%s/%s/%s",
-		strconv.Itoa(int(id)), strconv.Itoa(int(version)), path)
-}
-
-func createDestinationBucketUri(id int32, datasetUri string) string {
-	idString := strconv.Itoa(int(id))
-	destinationBucketUri, _, found := strings.Cut(datasetUri, idString)
-	if !found {
-		log.Fatalf("error creating bucket Uri")
-	}
-	return destinationBucketUri
 }

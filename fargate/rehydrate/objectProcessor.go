@@ -1,12 +1,14 @@
 package main
 
+import "context"
+
 // defines a generic object processor
 type ObjectProcessor interface {
-	Copy(Src, Dest) error // copy a source object to a destination
+	Copy(context.Context, Source, Destination) error // copy a source object to a destination
 }
 
 // source
-type Src interface {
+type Source interface {
 	GetUri() string
 	GetSize() int64
 	GetName() string
@@ -15,7 +17,7 @@ type Src interface {
 }
 
 // destination
-type Dest interface {
+type Destination interface {
 	GetBucketUri() string
 	GetKey() string
 }

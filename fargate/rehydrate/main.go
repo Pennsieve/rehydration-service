@@ -51,9 +51,9 @@ func main() {
 	}
 	processor := NewRehydrator(s3.NewFromConfig(cfg))
 
-	numberOfJobs := len(datasetMetadataByVersionReponse.Files)
-	rehydrations := make(chan *Rehydration, numberOfJobs)
-	results := make(chan string, numberOfJobs)
+	numberOfRehydrations := len(datasetMetadataByVersionReponse.Files)
+	rehydrations := make(chan *Rehydration, numberOfRehydrations)
+	results := make(chan string, numberOfRehydrations)
 
 	log.Println("Starting Rehydration process")
 	// create workers
@@ -85,7 +85,7 @@ func main() {
 	close(rehydrations)
 
 	// wait for the done signal
-	for j := 1; j <= numberOfJobs; j++ {
+	for j := 1; j <= numberOfRehydrations; j++ {
 		log.Println(<-results)
 	}
 

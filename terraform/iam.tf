@@ -58,6 +58,18 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     ]
   }
 
+statement {
+    effect = "Allow"
+
+    actions = [
+      "s3:*",
+    ]
+
+    resources = [
+      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
+      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
+    ]
+  }
   statement {
     sid    = "TaskLogPermissions"
     effect = "Allow"

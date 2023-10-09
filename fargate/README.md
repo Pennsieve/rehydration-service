@@ -1,4 +1,6 @@
-To build image:
+## Rehydration service
+
+To build image locally:
 
 `docker build -t pennsieve/rehydrate .`
 

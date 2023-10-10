@@ -64,7 +64,7 @@ func main() {
 
 	// create work
 	for _, j := range datasetMetadataByVersionReponse.Files {
-		destinationBucketUri, err := utils.CreateDestinationBucketUri(datasetByVersionReponse.ID, datasetByVersionReponse.Uri)
+		destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionReponse.Uri)
 		if err != nil {
 			log.Fatalf("error creating destination bucket uri")
 		}
@@ -76,7 +76,7 @@ func main() {
 				VersionId:  j.S3VersionID,
 				Path:       j.Path},
 			DestinationObject{
-				BucketUri: destinationBucketUri,
+				Bucket: destinationBucket,
 				Key: utils.CreateDestinationKey(datasetByVersionReponse.ID,
 					datasetByVersionReponse.Version,
 					j.Path),

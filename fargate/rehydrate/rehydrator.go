@@ -20,11 +20,11 @@ func NewRehydrator(s3 *s3.Client) ObjectProcessor {
 func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) error {
 	// TODO: file is less than or equal to 100MB ? simple copy : multiPart copy
 	log.Printf("copying %s (size: %v) to bucket: %s key: %s from %s ; ",
-		src.GetName(), src.GetSize(), dest.GetBucketUri(), dest.GetKey(), src.GetFullUri())
+		src.GetName(), src.GetSize(), dest.GetBucket(), dest.GetKey(), src.GetVersionedUri())
 
 	params := s3.CopyObjectInput{
-		Bucket:     aws.String(dest.GetBucketUri()),
-		CopySource: aws.String(src.GetFullUri()),
+		Bucket:     aws.String(dest.GetBucket()),
+		CopySource: aws.String(src.GetVersionedUri()),
 		Key:        aws.String(dest.GetKey()),
 	}
 

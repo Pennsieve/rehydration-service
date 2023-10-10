@@ -9,15 +9,15 @@ type ObjectProcessor interface {
 
 // source
 type Source interface {
-	GetUri() string
+	GetVersionedUri() string
 	GetSize() int64
 	GetName() string
 	GetPath() string
-	GetFullUri() string
+	GetDatasetUri() string
 }
 
 // destination
 type Destination interface {
-	GetBucketUri() string
+	GetBucket() string
 	GetKey() string
 }

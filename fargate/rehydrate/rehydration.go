@@ -1,6 +1,8 @@
 package main
 
-import "fmt"
+import (
+	"github.com/pennsieve/rehydration-service/rehydrate/utils"
+)
 
 // SourceObject implements Source
 type SourceObject struct {
@@ -12,8 +14,8 @@ type SourceObject struct {
 	Path           string
 }
 
-// GetUri returns the dataset Uri
-func (s SourceObject) GetUri() string {
+// GetUri returns the dataset Uri, including the scheme
+func (s SourceObject) GetDatasetUri() string {
 	return s.DatasetUri
 }
 
@@ -29,19 +31,20 @@ func (s SourceObject) GetPath() string {
 	return s.Path
 }
 
-func (s SourceObject) GetFullUri() string {
-	return fmt.Sprintf("%s%s?versionId=%s",
-		s.GetUri(), s.GetPath(), s.VersionId)
+// Get versioned source Uri, excludes scheme
+func (s SourceObject) GetVersionedUri() string {
+	return utils.CreateVersionedSource(
+		s.GetDatasetUri(), s.GetPath(), s.VersionId)
 }
 
 // DestinationObject implements Destination
 type DestinationObject struct {
-	BucketUri string
-	Key       string
+	Bucket string
+	Key    string
 }
 
-func (d DestinationObject) GetBucketUri() string {
-	return d.BucketUri
+func (d DestinationObject) GetBucket() string {
+	return d.Bucket
 }
 
 func (d DestinationObject) GetKey() string {

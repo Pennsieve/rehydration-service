@@ -3,9 +3,9 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
-	"strings"
 )
 
 func CreateDestinationKey(datasetId int32, versionId int32, path string) string {
@@ -13,13 +13,19 @@ func CreateDestinationKey(datasetId int32, versionId int32, path string) string 
 		strconv.Itoa(int(datasetId)), strconv.Itoa(int(versionId)), path)
 }
 
-func CreateDestinationBucketUri(datasetId int32, datasetUri string) (string, error) {
-	destinationBucketUri, _, found := strings.Cut(
-		datasetUri, strconv.Itoa(int(datasetId)))
-	if !found {
-		return "", errors.New("error creating destinationBucketUri")
+func CreateDestinationBucket(datasetUri string) (string, error) {
+	u, err := url.Parse(datasetUri)
+	if err != nil {
+		return "", errors.New("error creating destination bucket")
 	}
-	return destinationBucketUri, nil
+
+	return u.Host, nil
+}
+
+func CreateVersionedSource(uri string, key string, version string) string {
+	u, _ := url.Parse(uri)
+	return fmt.Sprintf("%s%s%s?versionId=%s",
+		u.Host, u.Path, key, version)
 }
 
 func GetApiHost(env string) string {

@@ -11,20 +11,20 @@ import (
 
 // rehydration processor - implements object processor
 type Rehydrator struct {
-	S3 *s3.Client
+	S3            *s3.Client
+	ThresholdSize int64
 }
 
-func NewRehydrator(s3 *s3.Client) ObjectProcessor {
-	return &Rehydrator{s3}
+func NewRehydrator(s3 *s3.Client, thresholdSize int64) ObjectProcessor {
+	return &Rehydrator{s3, thresholdSize}
 }
 
 func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) error {
 	// file is less than 100MB ? simple copy : multiPart copy
-	thresholdSize := 100 * 1024 * 1024 // 100 MB
 	log.Printf("copying %s (size: %v) to bucket: %s key: %s from %s ; ",
 		src.GetName(), src.GetSize(), dest.GetBucket(), dest.GetKey(), src.GetVersionedUri())
 
-	if src.GetSize() < int64(thresholdSize) {
+	if src.GetSize() < r.ThresholdSize {
 		log.Printf("simple copying %s (size: %v) to bucket: %s key: %s from %s ; ",
 			src.GetName(), src.GetSize(), dest.GetBucket(), dest.GetKey(), src.GetVersionedUri())
 		params := s3.CopyObjectInput{

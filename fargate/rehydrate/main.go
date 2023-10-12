@@ -13,6 +13,8 @@ import (
 	"github.com/pennsieve/rehydration-service/rehydrate/utils"
 )
 
+const ThresholdSize = int64(100 * 1024 * 1024)
+
 func main() {
 	log.Println("Running rehydrate task")
 	ctx := context.Background()
@@ -49,7 +51,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
 	}
-	processor := NewRehydrator(s3.NewFromConfig(cfg))
+
+	processor := NewRehydrator(s3.NewFromConfig(cfg), ThresholdSize)
 
 	numberOfRehydrations := len(datasetMetadataByVersionReponse.Files)
 	rehydrations := make(chan *Rehydration, numberOfRehydrations)

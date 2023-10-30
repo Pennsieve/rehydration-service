@@ -80,7 +80,7 @@ func main() {
 
 		rehydrations <- NewRehydration(
 			SourceObject{
-				DatasetUri: datasetByVersionReponse.Uri,
+				DatasetUri: datasetFileByVersionResponse.Uri,
 				Size:       j.Size,
 				Name:       j.Name,
 				VersionId:  datasetFileByVersionResponse.S3VersionID,

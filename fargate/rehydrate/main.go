@@ -38,13 +38,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}
-	log.Println(datasetByVersionReponse)
+	log.Println(datasetByVersionReponse) // TODO remove
 
 	datasetMetadataByVersionReponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
 		log.Fatalf("error retrieving dataset by version")
 	}
-	log.Println(datasetMetadataByVersionReponse)
+	log.Println(datasetMetadataByVersionReponse) // TODO remove
 
 	// Initializing environment
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -76,7 +76,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("error retrieving dataset file by version")
 		}
-		log.Println(datasetFileByVersionResponse)
+		log.Println(datasetFileByVersionResponse) // TODO remove
 
 		rehydrations <- NewRehydration(
 			SourceObject{

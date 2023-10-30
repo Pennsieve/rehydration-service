@@ -71,12 +71,19 @@ func main() {
 		if err != nil {
 			log.Fatalf("error creating destination bucket uri")
 		}
+		datasetFileByVersionResponse, err := pennsieveClient.Discover.GetDatasetFileByVersion(
+			ctx, int32(datasetId), int32(versionId), j.Path)
+		if err != nil {
+			log.Fatalf("error retrieving dataset file by version")
+		}
+		log.Println(datasetFileByVersionResponse) // TODO: remove
+
 		rehydrations <- NewRehydration(
 			SourceObject{
-				DatasetUri: datasetByVersionReponse.Uri,
+				DatasetUri: datasetFileByVersionResponse.Uri,
 				Size:       j.Size,
 				Name:       j.Name,
-				VersionId:  j.S3VersionID,
+				VersionId:  datasetFileByVersionResponse.S3VersionID,
 				Path:       j.Path},
 			DestinationObject{
 				Bucket: destinationBucket,

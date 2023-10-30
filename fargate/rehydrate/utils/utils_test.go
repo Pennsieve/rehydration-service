@@ -30,10 +30,9 @@ func TestCreateDestinationBucket(t *testing.T) {
 }
 
 func TestCreateVersionedSource(t *testing.T) {
-	datasetUri := "s3://pennsieve-dev-discover-publish50-use1/5069/"
-	path := "metadata/schema.json"
+	datasetUri := "s3://pennsieve-dev-discover-publish50-use1/5069/metadata/schema.json"
 	version := "48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
-	result := utils.CreateVersionedSource(datasetUri, path, version)
+	result := utils.CreateVersionedSource(datasetUri, version)
 	expectedResult := "pennsieve-dev-discover-publish50-use1/5069/metadata/schema.json?versionId=48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
 	if result != expectedResult {
 		t.Errorf("got %s, expected %s", result, expectedResult)

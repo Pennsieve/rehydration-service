@@ -34,7 +34,7 @@ func (s SourceObject) GetPath() string {
 // Get versioned source Uri, excludes scheme
 func (s SourceObject) GetVersionedUri() string {
 	return utils.CreateVersionedSource(
-		s.GetDatasetUri(), s.GetPath(), s.VersionId)
+		s.GetDatasetUri(), s.VersionId)
 }
 
 // DestinationObject implements Destination

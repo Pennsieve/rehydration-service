@@ -22,10 +22,10 @@ func CreateDestinationBucket(datasetUri string) (string, error) {
 	return u.Host, nil
 }
 
-func CreateVersionedSource(uri string, key string, version string) string {
+func CreateVersionedSource(uri string, version string) string {
 	u, _ := url.Parse(uri)
-	return fmt.Sprintf("%s%s%s?versionId=%s",
-		u.Host, u.Path, key, version)
+	return fmt.Sprintf("%s%s?versionId=%s",
+		u.Host, u.Path, version)
 }
 
 func GetApiHost(env string) string {

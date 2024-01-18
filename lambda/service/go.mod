@@ -2,11 +2,15 @@ module github.com/pennsieve/rehydration-service/service
 
 go 1.21
 
+replace github.com/pennsieve/rehydration-service/shared => ../../shared
+
 require (
 	github.com/aws/aws-lambda-go v1.41.0
 	github.com/aws/aws-sdk-go-v2 v1.21.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.39
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.30.1
+	github.com/pennsieve/pennsieve-go-core v1.8.0
+	github.com/pennsieve/rehydration-service/shared v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -20,6 +24,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.21.5 // indirect
 	github.com/aws/smithy-go v1.14.2 // indirect
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/stretchr/testify v1.8.0 // indirect
+	github.com/lib/pq v1.10.7 // indirect
+	github.com/sirupsen/logrus v1.9.0 // indirect
+	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )

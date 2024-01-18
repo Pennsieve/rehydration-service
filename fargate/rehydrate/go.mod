@@ -2,12 +2,15 @@ module github.com/pennsieve/rehydration-service/rehydrate
 
 go 1.21
 
+replace github.com/pennsieve/rehydration-service/shared => ../../shared
+
 require (
 	github.com/aws/aws-sdk-go v1.45.23
 	github.com/aws/aws-sdk-go-v2 v1.21.0
 	github.com/aws/aws-sdk-go-v2/config v1.15.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.40.0
 	github.com/pennsieve/pennsieve-go v1.3.1
+	github.com/pennsieve/rehydration-service/shared v0.0.0-00010101000000-000000000000
 )
 
 require (

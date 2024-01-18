@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
+	"github.com/pennsieve/rehydration-service/shared/logging"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -19,20 +21,25 @@ import (
 	"github.com/pennsieve/rehydration-service/service/runner"
 )
 
+var logger = logging.Default
+
 func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "RehydrationServiceHandler"
 	if lc, ok := lambdacontext.FromContext(ctx); ok {
-		log.Println("awsRequestID", lc.AwsRequestID)
+		logger = logger.With(slog.String("awsRequestID", lc.AwsRequestID))
 	}
+	userClaim := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda).UserClaim
+	logger = logger.With(slog.Any("userID", userClaim.Id), slog.String("userNodeID", userClaim.NodeId))
 
 	var dataset models.Dataset
 	if err := json.Unmarshal([]byte(request.Body), &dataset); err != nil {
-		log.Println(err.Error())
+		logger.Error("json.Unmarshal() error", "error", err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       handlerName,
 		}, ErrUnmarshaling
 	}
+	logger = logger.With(slog.Any("datasetID", dataset.ID), slog.Any("datasetVersionID", dataset.VersionID))
 
 	// Get from SSM
 	TaskDefinitionArn := os.Getenv("TASK_DEF_ARN")
@@ -45,11 +52,12 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		log.Fatalf("LoadDefaultConfig: %v\n", err)
+		logger.Error("config.LoadDefaultConfig() error", "error", err)
+		os.Exit(1)
 	}
 
 	client := ecs.NewFromConfig(cfg)
-	log.Println("Initiating new Rehydrate Fargate Task.")
+	logger.Info("Initiating new Rehydrate Fargate Task.")
 	datasetIDKey := "DATASET_ID"
 	datasetIDValue := strconv.Itoa(int(dataset.ID))
 	datasetVersionIDKey := "DATASET_VERSION_ID"
@@ -92,7 +100,7 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 
 	runner := runner.NewECSTaskRunner(client, runTaskIn)
 	if err := runner.Run(ctx); err != nil {
-		log.Println(err)
+		logger.Error("runner.Run() error", "error", err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       handlerName,

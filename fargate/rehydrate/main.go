@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log"
 	"os"
 	"strconv"
@@ -15,8 +16,10 @@ import (
 
 const ThresholdSize = int64(100 * 1024 * 1024)
 
+var logger = logging.Default
+
 func main() {
-	log.Println("Running rehydrate task")
+	logger.Info("Running rehydrate task")
 	ctx := context.Background()
 
 	// TODO: remove

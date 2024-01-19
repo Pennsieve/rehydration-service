@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"github.com/pennsieve/rehydration-service/shared/logging"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -19,49 +18,51 @@ const ThresholdSize = int64(100 * 1024 * 1024)
 var logger = logging.Default
 
 func main() {
-	logger.Info("Running rehydrate task")
 	ctx := context.Background()
-
-	// TODO: remove
-	log.Println("DATASET_ID", os.Getenv("DATASET_ID"))
-	log.Println("DATASET_VERSION_ID", os.Getenv("DATASET_VERSION_ID"))
-	log.Println("ENV", os.Getenv("ENV"))
 
 	datasetId, err := strconv.Atoi(os.Getenv("DATASET_ID"))
 	if err != nil {
-		log.Fatalf("error converting datasetId to int")
+		logger.Error("error converting datasetId to int",
+			"datasetID", os.Getenv("DATASET_ID"), "error", err)
+		os.Exit(1)
 	}
 	versionId, err := strconv.Atoi(os.Getenv("DATASET_VERSION_ID"))
 	if err != nil {
-		log.Fatalf("error converting versionId to int")
+		logger.Error("error converting datasetVersionId to int",
+			"datasetVersionID", os.Getenv("DATASET_VERSION_ID"), "error", err)
+		os.Exit(1)
 	}
+
+	logger = logger.With(slog.Int("datasetID", datasetId), slog.Int("datasetVersionID", versionId))
+	logger.Info("Running rehydrate task")
 
 	pennsieveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: utils.GetApiHost(os.Getenv("ENV"))})
-	datasetByVersionReponse, err := pennsieveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
+	datasetByVersionResponse, err := pennsieveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
-		log.Fatalf("error retrieving dataset by version")
+		logger.Error("error retrieving dataset by version", "error", err)
+		os.Exit(1)
 	}
-	log.Println(datasetByVersionReponse) // TODO: remove
 
-	datasetMetadataByVersionReponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
+	datasetMetadataByVersionResponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
 	if err != nil {
-		log.Fatalf("error retrieving dataset by version")
+		logger.Error("error retrieving dataset metadata by version", "error", err)
+		os.Exit(1)
 	}
-	log.Println(datasetMetadataByVersionReponse) // TODO: remove
 
 	// Initializing environment
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Fatalf("LoadDefaultConfig: %v\n", err)
+		logger.Error("error loading default AWS config", "error", err)
+		os.Exit(1)
 	}
 
 	processor := NewRehydrator(s3.NewFromConfig(cfg), ThresholdSize)
 
-	numberOfRehydrations := len(datasetMetadataByVersionReponse.Files)
+	numberOfRehydrations := len(datasetMetadataByVersionResponse.Files)
 	rehydrations := make(chan *Rehydration, numberOfRehydrations)
-	results := make(chan string, numberOfRehydrations)
+	results := make(chan WorkerResult, numberOfRehydrations)
 
-	log.Println("Starting Rehydration process")
+	logger.Info("Starting Rehydration process")
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
@@ -69,17 +70,18 @@ func main() {
 	}
 
 	// create work
-	for _, j := range datasetMetadataByVersionReponse.Files {
-		destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionReponse.Uri)
+	for _, j := range datasetMetadataByVersionResponse.Files {
+		destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionResponse.Uri)
 		if err != nil {
-			log.Fatalf("error creating destination bucket uri")
+			logger.Error("error creating destination bucket uri", "error", err)
+			os.Exit(1)
 		}
 		datasetFileByVersionResponse, err := pennsieveClient.Discover.GetDatasetFileByVersion(
 			ctx, int32(datasetId), int32(versionId), j.Path)
 		if err != nil {
-			log.Fatalf("error retrieving dataset file by version")
+			logger.Error("error retrieving dataset file by version", "error", err)
+			os.Exit(1)
 		}
-		log.Println(datasetFileByVersionResponse) // TODO: remove
 
 		rehydrations <- NewRehydration(
 			SourceObject{
@@ -90,8 +92,8 @@ func main() {
 				Path:       j.Path},
 			DestinationObject{
 				Bucket: destinationBucket,
-				Key: utils.CreateDestinationKey(datasetByVersionReponse.ID,
-					datasetByVersionReponse.Version,
+				Key: utils.CreateDestinationKey(datasetByVersionResponse.ID,
+					datasetByVersionResponse.Version,
 					j.Path),
 			})
 	}
@@ -99,21 +101,43 @@ func main() {
 
 	// wait for the done signal
 	for j := 1; j <= numberOfRehydrations; j++ {
-		log.Println(<-results)
+		result := <-results
+		if result.Error != nil {
+			logger.Error("error rehydrating file", result.LogGroups())
+		} else {
+			logger.Info("rehydrated file", result.LogGroups())
+		}
 	}
 
-	log.Println("Rehydration complete")
+	logger.Info("Rehydration complete")
+}
+
+type WorkerResult struct {
+	Worker      int
+	Rehydration *Rehydration
+	Error       error
+}
+
+func (wr *WorkerResult) LogGroups() []any {
+	if wr.Error != nil {
+		return wr.Rehydration.LogGroups(slog.Any("error", wr.Error))
+	}
+	return wr.Rehydration.LogGroups()
 }
 
 // processes rehydrations
-func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- string, processor ObjectProcessor) {
+func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- WorkerResult, processor ObjectProcessor) {
 	for r := range rehydrations {
-		log.Println("processing on worker: ", w)
+		result := WorkerResult{
+			Worker:      w,
+			Rehydration: r,
+		}
+		logger.Info("processing on worker", r.LogGroups(slog.Int("worker", w))...)
 		err := processor.Copy(ctx, r.Src, r.Dest)
 		if err != nil {
-			results <- err.Error()
-		} else {
-			results <- fmt.Sprintf("%v done", w)
+			result.Error = err
 		}
+		results <- result
+
 	}
 }

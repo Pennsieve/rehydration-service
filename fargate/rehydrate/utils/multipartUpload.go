@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +24,7 @@ const maxPartSize = 50 * 1024 * 1024
 const nrCopyWorkers = 10
 
 // MultiPartCopy function that starts, perform each part upload, and completes the copy
-func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string) error {
+func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string, logger *slog.Logger) error {
 
 	partWalker := make(chan s3.UploadPartCopyInput, nrCopyWorkers)
 	results := make(chan s3types.CompletedPart, nrCopyWorkers)
@@ -66,7 +66,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 	go aggregateResult(done, &parts, results)
 
 	// Wait until all processors are completed.
-	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results)
+	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results, logger)
 
 	// Wait until done channel has a value
 	<-done
@@ -93,7 +93,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 		return fmt.Errorf("error completing upload: %w", err)
 	}
 	if compOutput != nil {
-		log.Printf("Successfully copied: %s to Bucket: %s Key: %s\n", copySource, destBucket, destKey)
+		logger.Info("multipart copy complete")
 	}
 	return nil
 }
@@ -133,7 +133,7 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 
 // createWorkerPool creates a worker pool for uploading parts
 func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, uploadId string,
-	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart) {
+	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart, logger *slog.Logger) {
 
 	defer func() {
 		close(results)
@@ -143,11 +143,12 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 	workerFailed := false
 	for w := 1; w <= nrWorkers; w++ {
 		copyWg.Add(1)
-		log.Println("starting upload-part worker:", w)
+		logger.Info("starting upload-part worker", "worker", w)
 		w := int32(w)
 		go func() {
-			err := worker(ctx, svc, &copyWg, w, partWalker, results)
+			err := worker(ctx, svc, &copyWg, w, partWalker, results, logger)
 			if err != nil {
+				logger.Error("upload-part worker failed", "worker", w, "error", err)
 				workerFailed = true
 			}
 		}()
@@ -159,18 +160,18 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 
 	// Check if workers finished due to error
 	if workerFailed {
-		log.Println("Attempting to abort upload")
+		logger.Info("attempting to abort upload")
 		abortIn := s3.AbortMultipartUploadInput{
 			UploadId: aws.String(uploadId),
 		}
 		//ignoring any errors with aborting the copy
 		_, err := svc.AbortMultipartUpload(context.TODO(), &abortIn)
 		if err != nil {
-			log.Println("Error aborting failed upload session.")
+			logger.Error("error aborting failed upload session", "error", err)
 		}
 	}
 
-	log.Println("Finished checking status of workers.")
+	logger.Info("finished checking status of workers")
 }
 
 // aggregateResult grabs the e-tags from results channel and aggregates in array
@@ -185,12 +186,12 @@ func aggregateResult(done chan bool, parts *[]s3types.CompletedPart, results cha
 
 // worker uploads parts of a file as part of copy function.
 func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId int32,
-	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart) error {
+	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart, logger *slog.Logger) error {
 
 	// Close worker after it completes.
 	// This happens when the items channel closes.
 	defer func() {
-		log.Println("Closing UploadPart Worker: ", workerId)
+		logger.Info("closing UploadPart Worker", "worker", workerId)
 		wg.Done()
 	}()
 
@@ -214,7 +215,7 @@ func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId in
 
 			results <- cPart
 
-			log.Printf("Successfully upload part %d of %s\n", partInput.PartNumber, *partInput.UploadId)
+			logger.Info("successfully upload part", "partNumber", partInput.PartNumber, "uploadId", *partInput.UploadId)
 		}
 
 	}

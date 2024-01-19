@@ -60,3 +60,9 @@ type Rehydration struct {
 func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
 	return &Rehydration{src, dest}
 }
+
+func (r *Rehydration) LogGroups(additionalArgs ...any) []any {
+	groups := []any{SourceLogGroup(r.Src), DestinationLogGroup(r.Dest)}
+	groups = append(groups, additionalArgs)
+	return groups
+}

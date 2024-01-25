@@ -19,19 +19,22 @@ func init() {
 
 // configureLogging separated out from init() for testing with environment variables
 func configureLogging() {
-	envLogLevel := os.Getenv("LOG_LEVEL")
-	if len(envLogLevel) > 0 {
-		var level slog.Level
-		if err := level.UnmarshalText([]byte(envLogLevel)); err != nil {
-			slog.Error("error unmarshalling LOG_LEVEL value",
-				slog.String("LOG_LEVEL", envLogLevel),
-				slog.Any("error", err))
-			level = slog.LevelInfo
+	if envLogLevel, levelIsSet := os.LookupEnv("LOG_LEVEL"); levelIsSet {
+		if len(envLogLevel) == 0 {
+			slog.Warn("LOG_LEVEL is set, but is empty")
+		} else {
+			var level slog.Level
+			if err := level.UnmarshalText([]byte(envLogLevel)); err != nil {
+				slog.Error("error unmarshalling LOG_LEVEL value",
+					slog.String("LOG_LEVEL", envLogLevel),
+					slog.Any("error", err))
+				level = slog.LevelInfo
+			}
+			Level.Set(level)
 		}
-		Level.Set(level)
-	}
-	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: Level})
-	slog.SetDefault(slog.New(h))
+	} // and if !levelIsSet we just use the default value, so nothing to do.
+	slogJSONHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: Level})
+	slog.SetDefault(slog.New(slogJSONHandler))
 	slog.Info("default log level set", slog.String("logging.Level", Level.String()))
 	Default = slog.Default()
 }

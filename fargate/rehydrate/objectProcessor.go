@@ -19,6 +19,10 @@ type Source interface {
 	GetDatasetUri() string
 }
 
+// SourceLogGroup transforms a Source into a slog.Attr Group to be used for structured logging.
+// Example usage: slog.Info("copying source", SourceLogGroup(s)) or to create a re-usable logger that
+// will always include info about the particular Source s from an existing slog.Logger:
+// sourceLogger := logger.With(SourceLogGroup(s))
 func SourceLogGroup(s Source) slog.Attr {
 	return slog.Group("source",
 		slog.String("versionedURI", s.GetVersionedUri()),
@@ -34,6 +38,10 @@ type Destination interface {
 	GetKey() string
 }
 
+// DestinationLogGroup transforms a Destination into a slog.Attr to be used for structured logging.
+// Example usage: slog.Info("destination set", DestinationLogGroup(d)) or
+// to create a re-usable logger that will always include info about the particular Destination d from an existing slog.Logger:
+// destinationLogger := logger.With(DestinationLogGroup(s))
 func DestinationLogGroup(d Destination) slog.Attr {
 	return slog.Group("destination",
 		slog.String("bucket", d.GetBucket()),

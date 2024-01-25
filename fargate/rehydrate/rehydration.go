@@ -61,6 +61,9 @@ func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
 	return &Rehydration{src, dest}
 }
 
+// LogGroups transforms this Rehydration into a collection of structured logging properties to be used by a slog.Logger.
+// Example usage: slog.Info("file rehydration complete", r.LogGroups()...)
+// or slog.Error("file rehydration failed", r.LogGroups(slog.Any("error", err))...)
 func (r *Rehydration) LogGroups(additionalArgs ...any) []any {
 	groups := []any{SourceLogGroup(r.Src), DestinationLogGroup(r.Dest)}
 	groups = append(groups, additionalArgs)

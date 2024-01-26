@@ -23,10 +23,11 @@ ansiColor('xterm') {
 
     if(!isMain) {
       stage("Build") {
-      try {
-        sh "IMAGE_TAG=${imageTag} make package"
-      } finally {
-        sh "make clean"
+        try {
+          sh "IMAGE_TAG=${imageTag} make package"
+        } finally {
+          sh "make clean"
+        }
       }
     } else {
       stage ('Build and Push') {

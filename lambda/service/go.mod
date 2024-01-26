@@ -2,7 +2,7 @@ module github.com/pennsieve/rehydration-service/service
 
 go 1.21
 
-replace github.com/pennsieve/rehydration-service/shared => ../../shared
+replace github.com/pennsieve/rehydration-service/shared => ./../../rehydrate/shared
 
 require (
 	github.com/aws/aws-lambda-go v1.41.0

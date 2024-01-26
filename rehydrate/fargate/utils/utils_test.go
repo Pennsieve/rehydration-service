@@ -3,7 +3,7 @@ package utils_test
 import (
 	"testing"
 
-	"github.com/pennsieve/rehydration-service/rehydrate/utils"
+	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 func TestCreateDestinationKey(t *testing.T) {

@@ -45,7 +45,7 @@ package:
 	@echo "*   Building Fargate   *"
 	@echo "***********************"
 	@echo ""
-	cd $(WORKING_DIR)/rehydrate/fargate; \
+	cd $(WORKING_DIR)/rehydrate; \
 		docker build -t pennsieve/rehydrate:${IMAGE_TAG} . ;\
 
 publish:

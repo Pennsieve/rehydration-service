@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/pennsieve/rehydration-service/rehydrate/utils"
+	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 // rehydration processor - implements object processor

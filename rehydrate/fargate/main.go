@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
-	"github.com/pennsieve/rehydration-service/rehydrate/utils"
+	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 const ThresholdSize = int64(100 * 1024 * 1024)

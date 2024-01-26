@@ -17,8 +17,8 @@ help:
 go-get:
 	cd $(WORKING_DIR)/lambda/service; \
 		go get github.com/pennsieve/rehydration-service/service
-	cd $(WORKING_DIR)/fargate/rehydrate; \
-		go get github.com/pennsieve/rehydration-service/rehydrate
+	cd $(WORKING_DIR)/rehydrate/fargate; \
+		go get github.com/pennsieve/rehydration-service/fargate
 
 test-ci:
 	@echo ""
@@ -45,7 +45,7 @@ package:
 	@echo "*   Building Fargate   *"
 	@echo "***********************"
 	@echo ""
-	cd $(WORKING_DIR)/fargate/rehydrate; \
+	cd $(WORKING_DIR)/rehydrate/fargate; \
 		docker build -t pennsieve/rehydrate:${IMAGE_TAG} . ;\
 
 publish:

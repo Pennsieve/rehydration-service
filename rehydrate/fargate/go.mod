@@ -1,4 +1,4 @@
-module github.com/pennsieve/rehydration-service/rehydrate
+module github.com/pennsieve/rehydration-service/fargate
 
 go 1.21
 

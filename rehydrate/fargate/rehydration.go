@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/pennsieve/rehydration-service/rehydrate/utils"
+	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 // SourceObject implements Source

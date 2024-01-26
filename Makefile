@@ -3,6 +3,7 @@
 LAMBDA_BUCKET ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR   ?= "$(shell pwd)"
 SERVICE_NAME  ?= "rehydration-service"
+LAMBDA_BIN ?= $(WORKING_DIR)/lambda/bin
 SERVICE_PACKAGE_NAME ?= "rehydration-service-${IMAGE_TAG}.zip"
 
 .DEFAULT: help
@@ -26,6 +27,9 @@ test-ci:
 docker-clean:		
 	@echo ""
 
+clean:
+	rm -fr $(LAMBDA_BIN)
+
 package:
 	@echo ""
 	@echo "***********************"
@@ -33,9 +37,9 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/service; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(WORKING_DIR)/lambda/bin/service/bootstrap; \
-		cd $(WORKING_DIR)/lambda/bin/service/ ; \
-			zip -r $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME) .
+  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/service/bootstrap; \
+		cd $(LAMBDA_BIN)/service/ ; \
+			zip -r $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) .
 	@echo ""
 	@echo "***********************"
 	@echo "*   Building Fargate   *"
@@ -43,7 +47,6 @@ package:
 	@echo ""
 	cd $(WORKING_DIR)/fargate/rehydrate; \
 		docker build -t pennsieve/rehydrate:${IMAGE_TAG} . ;\
-		docker push pennsieve/rehydrate:${IMAGE_TAG} ;\
 
 publish:
 	@make package
@@ -52,5 +55,11 @@ publish:
 	@echo "*   Publishing Trigger lambda   *"
 	@echo "*************************"
 	@echo ""
-	aws s3 cp $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/service/
-	rm -rf $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME)
+	aws s3 cp $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/service/
+	rm -rf $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME)
+	@echo ""
+	@echo "***********************"
+	@echo "*   Publishing Fargate   *"
+	@echo "***********************"
+	@echo ""
+	docker push pennsieve/rehydrate:${IMAGE_TAG}

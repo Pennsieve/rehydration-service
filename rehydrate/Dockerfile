@@ -1,5 +1,9 @@
 FROM golang:1.21-alpine
 
+WORKDIR /usr/src/shared
+
+COPY shared ./
+
 WORKDIR /usr/src/app
 
 COPY fargate ./

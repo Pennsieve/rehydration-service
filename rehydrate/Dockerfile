@@ -2,7 +2,7 @@ FROM golang:1.21-alpine
 
 WORKDIR /usr/src/app
 
-COPY . ./
+COPY fargate ./
 RUN go mod tidy
 
 

@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  # Test Container for Jenkins
+  ci-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    env_file:
+      - dockertest.env
+    links:
+      - dynamodb
+    environment:
+      - DYNAMODB_URL=http://dynamodb
+    volumes:
+      - $PWD:/go/src/github.com/pennsieve/rehydration-service
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    restart: always

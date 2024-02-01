@@ -38,7 +38,7 @@ func main() {
 	var fileErrors []error
 	for _, result := range results {
 		if result.Error != nil {
-			rehydrator.logger.Error("error rehydrating file", result.LogGroups())
+			rehydrator.logger.Error("error rehydrating file", result.LogGroups()...)
 			fileErrors = append(fileErrors, result.Error)
 		}
 	}

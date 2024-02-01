@@ -53,7 +53,10 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		logger.Error("config.LoadDefaultConfig() error", "error", err)
-		os.Exit(1)
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 500,
+			Body:       handlerName,
+		}, err
 	}
 
 	client := ecs.NewFromConfig(cfg)

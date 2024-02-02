@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log/slog"
 	"os"
 	"strconv"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
@@ -18,6 +18,7 @@ import (
 const ThresholdSize = int64(100 * 1024 * 1024)
 
 var logger = logging.Default
+var awsConfigFactory = awsconfig.NewFactory()
 
 func main() {
 	ctx := context.Background()
@@ -100,16 +101,16 @@ func NewDatasetRehydrator(ctx context.Context) (*DatasetRehydrator, error) {
 	}
 
 	// Initializing environment
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := awsConfigFactory.Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error loading default AWS config: %w", err)
+		return nil, err
 	}
 
 	return &DatasetRehydrator{
 		datasetID:       datasetId,
 		versionID:       versionId,
 		pennsieveClient: pennsieve.NewClient(pennsieve.APIParams{ApiHost: utils.GetApiHost(os.Getenv("ENV"))}),
-		awsConfig:       cfg,
+		awsConfig:       *cfg,
 		logger:          logging.Default.With(slog.Int("datasetID", datasetId), slog.Int("datasetVersionID", versionId)),
 	}, nil
 }

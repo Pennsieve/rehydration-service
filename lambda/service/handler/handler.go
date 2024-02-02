@@ -7,16 +7,19 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/runner"
+	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log/slog"
+	"strings"
 )
 
 var logger = logging.Default
+var AWSConfigFactory = awsconfig.NewFactory()
 
 func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	taskConfig, err := models.TaskConfigFromEnvironment()
@@ -29,15 +32,15 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		logger.Error("error creating RehydrationRequest", "error", err)
 		return errorResponse(500, err, request)
 	}
-	err = rehydrationRequest.handle(ctx, taskConfig)
+	out, err := rehydrationRequest.handle(ctx, taskConfig)
 	if err != nil {
-		logger.Error("error handling RehydrationRequest", "error", err)
+		rehydrationRequest.logger.Error("error handling RehydrationRequest", "error", err)
 		return errorResponse(500, err, request)
 	}
-	handlerName := "RehydrationServiceHandler"
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 202,
-		Body:       fmt.Sprintf("%s: Fargate task accepted", handlerName),
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       fmt.Sprintf(`{"rehydrationARN": %q}`, out),
 	}, nil
 }
 
@@ -74,19 +77,19 @@ func NewRehydrationRequest(ctx context.Context, lambdaRequest events.APIGatewayV
 		return nil, fmt.Errorf("error unmarshalling request body [%s]: %w", lambdaRequest.Body, err)
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := AWSConfigFactory.Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error loading default AWS config: %w", err)
+		return nil, err
 	}
 
 	requestLogger := logging.Default.With(slog.String("requestID", awsRequestID),
-		slog.Group("dataset", slog.Int("id", dataset.ID)), slog.Int("versionID", dataset.VersionID),
+		slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionID", dataset.VersionID)),
 		slog.Group("user", slog.Int64("id", user.ID), slog.String("nodeID", user.NodeID)))
 
 	return &RehydrationRequest{
 		dataset:             dataset,
 		user:                user,
-		awsConfig:           cfg,
+		awsConfig:           *cfg,
 		logger:              requestLogger,
 		lambdaRequest:       lambdaRequest,
 		lambdaLogStreamName: lambdacontext.LogStreamName,
@@ -94,16 +97,55 @@ func NewRehydrationRequest(ctx context.Context, lambdaRequest events.APIGatewayV
 	}, nil
 }
 
-func (r *RehydrationRequest) handle(ctx context.Context, taskConfig *models.ECSTaskConfig) error {
+func (r *RehydrationRequest) handle(ctx context.Context, taskConfig *models.ECSTaskConfig) (string, error) {
 	client := ecs.NewFromConfig(r.awsConfig)
 	r.logger.Info("Initiating new Rehydrate Fargate Task.")
 
 	runTaskIn := taskConfig.RunTaskInput(r.dataset)
 
 	runner := runner.NewECSTaskRunner(client, runTaskIn)
-	if err := runner.Run(ctx); err != nil {
-		return fmt.Errorf("error starting Fargate task: %w", err)
+	out, err := runner.Run(ctx)
+	if err != nil {
+		return "", fmt.Errorf("error starting Fargate task: %w", err)
 	}
+	var taskARN string
+	if len(out.Tasks) > 0 {
+		taskARN = aws.ToString(out.Tasks[0].TaskArn)
+		r.logger.Info("fargate task started", taskLogGroup(out.Tasks[0]))
+		for i := 1; i < len(out.Tasks); i++ {
+			r.logger.Warn("unexpected additional tasks started", taskLogGroup(out.Tasks[i]))
+		}
+	}
+	if len(out.Failures) == 0 {
+		if len(taskARN) > 0 {
+			// simple success
+			return taskARN, nil
+		}
+		//this shouldn't occur: no failures, but also no tasks
+		return "", fmt.Errorf("unexpected error, ECS runTask returned no tasks and no failures")
+	}
+	// there must be some failures
+	var failMsgs []string
+	for _, fail := range out.Failures {
+		failMsgs = append(failMsgs, fmt.Sprintf("[arn: %s, reason: %s, detail: %s]",
+			aws.ToString(fail.Arn),
+			aws.ToString(fail.Reason),
+			aws.ToString(fail.Detail)))
+	}
+	var taskFailure error
+	if len(taskARN) == 0 {
+		// simple failure
+		taskFailure = fmt.Errorf("task failures: %s", strings.Join(failMsgs, ", "))
+	} else if len(taskARN) > 0 {
+		taskFailure = fmt.Errorf("task %s started, but there were failures: %s", taskARN,
+			strings.Join(failMsgs, ", "))
+	}
+	return taskARN, taskFailure
+}
 
-	return nil
+func taskLogGroup(task types.Task) slog.Attr {
+	return slog.Group("task",
+		slog.String("arn", aws.ToString(task.TaskArn)),
+		slog.String("lastStatus", aws.ToString(task.LastStatus)),
+	)
 }

@@ -73,7 +73,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 	// sort parts (required for complete method
 	sort.Slice(parts, func(i, j int) bool {
-		return parts[i].PartNumber < parts[j].PartNumber
+		return *(parts[i].PartNumber) < *(parts[j].PartNumber)
 	})
 
 	//create struct for completing the upload
@@ -124,7 +124,7 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 			CopySource:      &copySource,
 			CopySourceRange: &copySourceRange,
 			Key:             &destKey,
-			PartNumber:      partNumber,
+			PartNumber:      &partNumber,
 			UploadId:        &uploadId,
 		}
 		partNumber++

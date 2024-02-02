@@ -20,6 +20,12 @@ go-get:
 	cd $(WORKING_DIR)/rehydrate/fargate; \
 		go get github.com/pennsieve/rehydration-service/fargate
 
+# Run go mod tidy on modules
+tidy:
+	cd ${WORKING_DIR}/lambda/service; go mod tidy
+	cd ${WORKING_DIR}/rehydrate/fargate; go mod tidy
+	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
+
 # Start the local versions of docker services
 local-services:
 	docker-compose -f docker-compose.test.yaml down --remove-orphans
@@ -27,7 +33,7 @@ local-services:
 
 # Run tests locally
 test: local-services
-	./run-tests.sh
+	./run-tests.sh dockertest.env
 	docker-compose -f docker-compose.test.yaml down --remove-orphans
 	make clean
 

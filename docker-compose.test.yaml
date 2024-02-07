@@ -11,7 +11,7 @@ services:
     links:
       - dynamodb
     environment:
-      - DYNAMODB_URL=http://dynamodb
+      - DYNAMODB_URL=http://dynamodb:8000
     volumes:
       - $PWD:/go/src/github.com/pennsieve/rehydration-service
 

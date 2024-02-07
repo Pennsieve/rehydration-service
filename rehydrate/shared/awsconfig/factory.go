@@ -26,6 +26,7 @@ func (f *Factory) Get(ctx context.Context) (*aws.Config, error) {
 	return f.awsConfig, nil
 }
 
+// Set is for use in tests, so that a config with custom endpoints can be supplied by this Factory.
 func (f *Factory) Set(awsConfig *aws.Config) {
 	f.awsConfig = awsConfig
 }

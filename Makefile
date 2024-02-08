@@ -50,8 +50,8 @@ clean: docker-clean
 docker-clean:
 	which docker-compose
 	docker-compose --version
-	docker-compose -f docker-compose.test-ci.yaml down
-	docker-compose -f docker-compose.test-local.yaml down
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
 
 package:

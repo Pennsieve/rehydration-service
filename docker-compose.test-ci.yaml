@@ -3,9 +3,13 @@ version: '3'
 services:
   # Test Container for Jenkins
   tests-ci:
-    extends:
-      file: docker-compose.test-common.yaml
-      service: tests
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    env_file:
+      - test-common.env
+    volumes:
+      - $PWD:/go/src/github.com/pennsieve/rehydration-service
     depends_on:
       - dynamodb-ci
     environment:

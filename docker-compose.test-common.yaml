@@ -1,16 +1,6 @@
 version: '3'
 
 services:
-  # Container that runs tests
-  tests:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    env_file:
-      - test-common.env
-    volumes:
-      - $PWD:/go/src/github.com/pennsieve/rehydration-service
-
   dynamodb:
     image: amazon/dynamodb-local
     restart: always

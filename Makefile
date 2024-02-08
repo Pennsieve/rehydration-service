@@ -29,7 +29,7 @@ tidy:
 # Start the local versions of docker services
 local-services:
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
-	docker-compose -f docker-compose.test-local.yaml up -d dynamodb
+	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local
 
 # Run tests locally
 test: local-services
@@ -41,7 +41,7 @@ test-ci: docker-clean
 	which docker-compose
 	docker-compose --version
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests tests
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
 clean: docker-clean
 	rm -fr $(LAMBDA_BIN)

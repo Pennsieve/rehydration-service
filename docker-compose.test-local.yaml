@@ -1,9 +1,9 @@
 version: '3'
 
 services:
-  dynamodb:
+  dynamodb-local:
     extends:
-      service: dynamodb
       file: docker-compose.test-common.yaml
+      service: dynamodb
     ports:
       - "8000:8000"

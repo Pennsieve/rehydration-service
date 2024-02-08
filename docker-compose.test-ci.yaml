@@ -2,15 +2,15 @@ version: '3'
 
 services:
   # Test Container for Jenkins
-  tests:
+  tests-ci:
     extends:
+      file: docker-compose.test-common.yaml
       service: tests
-      file: docker-compose.test-common.yaml
     depends_on:
-      - dynamodb
+      - dynamodb-ci
     environment:
-      - DYNAMODB_URL=http://dynamodb:8000
-  dynamodb:
+      - DYNAMODB_URL=http://dynamodb-ci:8000
+  dynamodb-ci:
     extends:
-      service: dynamodb
       file: docker-compose.test-common.yaml
+      service: dynamodb

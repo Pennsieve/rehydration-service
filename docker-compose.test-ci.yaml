@@ -15,6 +15,5 @@ services:
     environment:
       - DYNAMODB_URL=http://dynamodb-ci:8000
   dynamodb-ci:
-    extends:
-      file: docker-compose.test-common.yaml
-      service: dynamodb
+    image: amazon/dynamodb-local
+    restart: always

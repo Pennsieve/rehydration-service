@@ -27,7 +27,7 @@ tidy:
 	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
 
 # Start the local versions of docker services
-local-services:
+local-services: docker-clean
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local
 
@@ -40,8 +40,8 @@ test: local-services
 test-ci: docker-clean
 	which docker
 	docker --version
-	docker compose -f docker-compose.test-ci.yaml down --remove-orphans
-	@IMAGE_TAG=$(IMAGE_TAG) docker compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
 clean: docker-clean
 	rm -fr $(LAMBDA_BIN)
@@ -50,8 +50,8 @@ clean: docker-clean
 docker-clean:
 	which docker
 	docker --version
-	docker compose -f docker-compose.test-ci.yaml down --remove-orphans
-	docker compose -f docker-compose.test-local.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
 
 package:

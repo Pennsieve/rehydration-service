@@ -90,15 +90,13 @@ func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
 	}
 	expressionAttrNames := map[string]string{
 		"#location": idempotencyRehydrationLocationAttrName,
-		"#expiry":   idempotencyExpiryTimestampAttrName,
 		"#status":   idempotencyStatusAttrName,
 	}
 	expressionAttrValues := map[string]types.AttributeValue{
 		":location": asItem[idempotencyRehydrationLocationAttrName],
-		":expiry":   asItem[idempotencyExpiryTimestampAttrName],
 		":status":   asItem[idempotencyStatusAttrName],
 	}
-	updateExpression := "SET #location = :location, #expiry = :expiry, #status = :status"
+	updateExpression := "SET #location = :location, #status = :status"
 
 	in := &dynamodb.UpdateItemInput{
 		Key:                       keyFromRecordID(record.ID),
@@ -109,6 +107,28 @@ func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
 		return fmt.Errorf("error updating record %s: %w", record.ID, err)
+	}
+	return nil
+}
+
+func (s *Store) SetTaskARN(ctx context.Context, recordID string, taskARN string) error {
+	expressionAttrNames := map[string]string{
+		"#taskARN": idempotencyTaskARNAttrName,
+	}
+	expressionAttrValues := map[string]types.AttributeValue{
+		":taskARN": &types.AttributeValueMemberS{Value: taskARN},
+	}
+	updateExpression := "SET #taskARN = :taskARN"
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                       keyFromRecordID(recordID),
+		TableName:                 aws.String(s.table),
+		ExpressionAttributeNames:  expressionAttrNames,
+		ExpressionAttributeValues: expressionAttrValues,
+		UpdateExpression:          aws.String(updateExpression),
+	}
+	if _, err := s.client.UpdateItem(ctx, in); err != nil {
+		return fmt.Errorf("error setting task ARN %s on record %s: %w", taskARN, recordID, err)
 	}
 	return nil
 }

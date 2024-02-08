@@ -5,7 +5,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"strings"
-	"time"
 )
 
 type Status string
@@ -27,7 +26,6 @@ func StatusFromString(s string) (Status, error) {
 	default:
 		return "", fmt.Errorf("unknown idempotency status: [%s]", s)
 	}
-
 }
 
 // idempotencyKeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
@@ -35,13 +33,13 @@ func StatusFromString(s string) (Status, error) {
 const idempotencyKeyAttrName = "id"
 const idempotencyRehydrationLocationAttrName = "rehydrationLocation"
 const idempotencyStatusAttrName = "status"
-const idempotencyExpiryTimestampAttrName = "expiryTimestamp"
+const idempotencyTaskARNAttrName = "fargateTaskARN"
 
 type Record struct {
-	ID                  string    `dynamodbav:"id"`
-	RehydrationLocation string    `dynamodbav:"rehydrationLocation"`
-	Status              Status    `dynamodbav:"status"`
-	ExpiryTimestamp     time.Time `dynamodbav:"expiryTimestamp"`
+	ID                  string `dynamodbav:"id"`
+	RehydrationLocation string `dynamodbav:"rehydrationLocation"`
+	Status              Status `dynamodbav:"status"`
+	FargateTaskARN      string `dynamodbav:"fargateTaskARN"`
 }
 
 func (r *Record) Item() (map[string]types.AttributeValue, error) {
@@ -51,16 +49,6 @@ func (r *Record) Item() (map[string]types.AttributeValue, error) {
 
 	}
 	return item, nil
-}
-
-// Equal is needed to compare Record instances since == does not work well with time.Time instances.
-// In particular, Equal is used in tests since the usual assert.Equal will fail if one instance has been
-// deserialized from DynamoDB. See [time.Time.Equal].
-func (r *Record) Equal(other Record) bool {
-	return r.ID == other.ID &&
-		r.RehydrationLocation == other.RehydrationLocation &&
-		r.Status == other.Status &&
-		r.ExpiryTimestamp.Equal(other.ExpiryTimestamp)
 }
 
 func FromItem(item map[string]types.AttributeValue) (*Record, error) {

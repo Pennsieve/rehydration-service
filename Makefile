@@ -38,20 +38,20 @@ test: local-services
 
 # Run dockerized tests (used on Jenkins)
 test-ci: docker-clean
-	which docker-compose
-	docker-compose --version
-	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
+	which docker
+	docker --version
+	docker compose -f docker-compose.test-ci.yaml down --remove-orphans
+	@IMAGE_TAG=$(IMAGE_TAG) docker compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
 clean: docker-clean
 	rm -fr $(LAMBDA_BIN)
 
 # Spin down active docker containers.
 docker-clean:
-	which docker-compose
-	docker-compose --version
-	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
-	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
+	which docker
+	docker --version
+	docker compose -f docker-compose.test-ci.yaml down --remove-orphans
+	docker compose -f docker-compose.test-local.yaml down --remove-orphans
 
 
 package:

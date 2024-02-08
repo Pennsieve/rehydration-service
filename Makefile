@@ -28,27 +28,27 @@ tidy:
 
 # Start the local versions of docker services
 local-services:
-	docker-compose -f docker-compose.test.yaml down --remove-orphans
-	docker-compose -f docker-compose.test.yaml up -d dynamodb
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-local.yaml up -d dynamodb
 
 # Run tests locally
 test: local-services
-	./run-tests.sh dockertest.env
-	docker-compose -f docker-compose.test.yaml down --remove-orphans
-	make clean
-
+	./run-tests.sh test-common.env test-local.env
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
 # Run dockerized tests (used on Jenkins)
 test-ci: docker-clean
-	docker-compose -f docker-compose.test.yaml down --remove-orphans
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yaml up --exit-code-from=ci-tests ci-tests
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests tests
 
 clean: docker-clean
 	rm -fr $(LAMBDA_BIN)
 
 # Spin down active docker containers.
 docker-clean:
-	docker-compose -f docker-compose.test.yaml down
+	docker-compose -f docker-compose.test-ci.yaml down
+	docker-compose -f docker-compose.test-local.yaml down
+
 
 package:
 	@echo ""

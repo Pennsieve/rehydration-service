@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  # Test Container for Jenkins
+  tests:
+    extends:
+      service: tests
+      file: docker-compose.test-common.yaml
+    environment:
+      - DYNAMODB_URL=http://dynamodb:8000
+  dynamodb:
+    extends:
+      service: dynamodb
+      file: docker-compose.test-common.yaml

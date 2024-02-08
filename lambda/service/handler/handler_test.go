@@ -31,7 +31,8 @@ func TestRehydrationServiceHandler(t *testing.T) {
 		respBody := string(respBytes)
 		written, err := fmt.Fprintln(writer, respBody)
 		require.NoError(t, err)
-		require.Equal(t, len(respBody), written)
+		// +1 for the newline
+		require.Equal(t, len(respBody)+1, written)
 	}))
 	defer mockECS.Close()
 

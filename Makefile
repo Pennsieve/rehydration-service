@@ -39,7 +39,7 @@ test: local-services
 
 
 # Run dockerized tests (used on Jenkins)
-test-ci:
+test-ci: docker-clean
 	docker-compose -f docker-compose.test.yaml down --remove-orphans
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yaml up --exit-code-from=ci-tests ci-tests
 

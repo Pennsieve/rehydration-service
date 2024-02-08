@@ -28,12 +28,15 @@ func TestRehydrationServiceHandler(t *testing.T) {
 		respMap := map[string][]map[string]*string{"tasks": {{"taskArn": aws.String(expectedTaskARN)}}}
 		respBytes, err := json.Marshal(respMap)
 		require.NoError(t, err)
-		fmt.Fprintln(writer, string(respBytes))
+		respBody := string(respBytes)
+		written, err := fmt.Fprintln(writer, respBody)
+		require.NoError(t, err)
+		require.Equal(t, len(respBody), written)
 	}))
 	defer mockECS.Close()
 
 	testEndpoints := test.NewAwsEndpointMap().WithECS(mockECS.URL)
-	testConfig := test.GetTestAWSConfig(t, testEndpoints)
+	testConfig := test.GetTestAWSConfig(t, testEndpoints, false)
 	handler.AWSConfigFactory.Set(&testConfig)
 	defer handler.AWSConfigFactory.Set(nil)
 

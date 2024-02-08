@@ -31,14 +31,14 @@ func StatusFromString(s string) (Status, error) {
 }
 
 // idempotencyKeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
-// Must match the struct tag for Record.Key, but there does not seem to be an easy way to enforce this.
-const idempotencyKeyAttrName = "key"
+// Must match the struct tag for Record.ID, but there does not seem to be an easy way to enforce this.
+const idempotencyKeyAttrName = "id"
 
 type Record struct {
-	Key                 string    `dynamodbav:"key"`
+	ID                  string    `dynamodbav:"id"`
 	RehydrationLocation string    `dynamodbav:"rehydrationLocation"`
 	Status              Status    `dynamodbav:"status"`
-	ExpiryTimestamp     time.Time `dynamodbav:"expiryTimestamp,unixtime"`
+	ExpiryTimestamp     time.Time `dynamodbav:"expiryTimestamp"`
 }
 
 func (r *Record) Item() (map[string]types.AttributeValue, error) {
@@ -50,11 +50,20 @@ func (r *Record) Item() (map[string]types.AttributeValue, error) {
 	return item, nil
 }
 
+// Equal is needed to compare Record instances since == does not work well with time.Time instances.
+// In particular, Equal is used in tests since the usual assert.Equal will fail if one instance has been
+// deserialized from DynamoDB. See [time.Time.Equal].
+func (r *Record) Equal(other Record) bool {
+	return r.ID == other.ID &&
+		r.RehydrationLocation == other.RehydrationLocation &&
+		r.Status == other.Status &&
+		r.ExpiryTimestamp.Equal(other.ExpiryTimestamp)
+}
+
 func FromItem(item map[string]types.AttributeValue) (*Record, error) {
 	var record Record
 	if err := attributevalue.UnmarshalMap(item, &record); err != nil {
 		return nil, fmt.Errorf("error unmarshalling item to Record: %w", err)
 	}
-	record.ExpiryTimestamp = record.ExpiryTimestamp.UTC()
 	return &record, nil
 }

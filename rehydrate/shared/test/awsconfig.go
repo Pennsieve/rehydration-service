@@ -10,7 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	awslogging "github.com/aws/smithy-go/logging"
 	"github.com/stretchr/testify/assert"
+	"log"
 	"os"
 	"testing"
 )
@@ -35,10 +37,10 @@ func (m AWSEndpointMap) WithECS(ecsURL string) AWSEndpointMap {
 	m[ecs.ServiceID] = aws.Endpoint{URL: ecsURL}
 	return m
 }
-func GetTestAWSConfig(t *testing.T, testEndpoints AWSEndpointMap) aws.Config {
+func GetTestAWSConfig(t *testing.T, testEndpoints AWSEndpointMap, logRequests bool) aws.Config {
 	awsKey := os.Getenv("TEST_AWS_KEY")
 	awsSecret := os.Getenv("TEST_AWS_SECRET")
-	awsConfig, err := config.LoadDefaultConfig(context.Background(),
+	optFns := []func(options *config.LoadOptions) error{
 		config.WithRegion("us-east-1"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(awsKey, awsSecret, "")),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
@@ -46,7 +48,13 @@ func GetTestAWSConfig(t *testing.T, testEndpoints AWSEndpointMap) aws.Config {
 				return endpoint, nil
 			}
 			return aws.Endpoint{}, fmt.Errorf("unknown test endpoint requested for service: %s", service)
-		})))
+		})),
+	}
+	if logRequests {
+		awsLogger := awslogging.NewStandardLogger(log.Writer())
+		optFns = append(optFns, config.WithLogger(awsLogger), config.WithClientLogMode(aws.LogRequestWithBody))
+	}
+	awsConfig, err := config.LoadDefaultConfig(context.Background(), optFns...)
 	if err != nil {
 		assert.FailNow(t, "error creating AWS config", err)
 	}

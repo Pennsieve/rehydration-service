@@ -2,6 +2,7 @@ package idempotency
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -48,14 +49,30 @@ func (s *Store) PutRecord(ctx context.Context, record Record) error {
 		ConditionExpression:                 aws.String(putCondition),
 		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
 	}
-	out, err := s.client.PutItem(ctx, &in)
-	if err != nil {
-		return fmt.Errorf("error putting record %+v to %s: %w", record, s.table, err)
+	if _, err = s.client.PutItem(ctx, &in); err == nil {
+		return nil
 	}
-	existingRecord, err := FromItem(out.Attributes)
-	if err != nil {
-		return fmt.Errorf("error unmarshalling condition check failure return values: %w", err)
+	var conditionFailedError *types.ConditionalCheckFailedException
+	if errors.As(err, &conditionFailedError) {
+		alreadyExistsError := RecordAlreadyExistsError{}
+		if existingRecord, err := FromItem(conditionFailedError.Item); err == nil {
+			alreadyExistsError.Existing = existingRecord
+		} else {
+			alreadyExistsError.UnmarshallingError = err
+		}
+		return alreadyExistsError
 	}
-	s.logger.Info(fmt.Sprintf("condition check failure return value: %+v", existingRecord))
-	return err
+	return fmt.Errorf("error putting record %+v to %s: %w", record, s.table, err)
+}
+
+type RecordAlreadyExistsError struct {
+	Existing           *Record
+	UnmarshallingError error
+}
+
+func (e RecordAlreadyExistsError) Error() string {
+	if e.UnmarshallingError == nil {
+		return fmt.Sprintf("record with ID %s already exists", e.Existing.ID)
+	}
+	return fmt.Sprintf("record with ID already exists; there was an error when unmarshalling existing Record: %v", e.UnmarshallingError)
 }

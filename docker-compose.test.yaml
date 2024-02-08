@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile.test
     env_file:
       - dockertest.env
-    links:
+    depends_on:
       - dynamodb
     environment:
       - DYNAMODB_URL=http://dynamodb:8000

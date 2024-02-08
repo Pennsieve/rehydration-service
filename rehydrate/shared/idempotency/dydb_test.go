@@ -13,36 +13,45 @@ import (
 )
 
 func TestStore_PutRecord(t *testing.T) {
-	t.Skip("need to finish create table input")
-	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap())
+	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
 	store, err := NewStore(awsConfig, logging.Default)
 	require.NoError(t, err)
-	createTable := dynamodb.CreateTableInput{
-		TableName: aws.String(store.table),
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table))
+	defer dyDB.Teardown()
+
+	record := Record{
+		ID:                  "1/2/",
+		RehydrationLocation: "bucket/1/2/",
+		Status:              InProgress,
+		ExpiryTimestamp:     time.Now(),
+	}
+	ctx := context.Background()
+	err = store.PutRecord(ctx, record)
+	require.NoError(t, err)
+
+	err = store.PutRecord(ctx, record)
+	require.Error(t, err)
+	var alreadyExistsError RecordAlreadyExistsError
+	require.ErrorAs(t, err, &alreadyExistsError)
+	require.Nil(t, alreadyExistsError.UnmarshallingError)
+	require.True(t, record.Equal(*alreadyExistsError.Existing))
+}
+
+func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {
+	return &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
-				AttributeName: aws.String("key"),
+				AttributeName: aws.String(idempotencyKeyAttrName),
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{
-				AttributeName: aws.String("key"),
+				AttributeName: aws.String(idempotencyKeyAttrName),
 				KeyType:       types.KeyTypeHash,
 			},
 		},
 		BillingMode: types.BillingModePayPerRequest,
 	}
-	dyDB := test.NewDynamoDBFixture(t, store.client, &createTable)
-	defer dyDB.Teardown()
-
-	record := Record{
-		Key:                 "1/2/",
-		RehydrationLocation: "bucket/1/2/",
-		Status:              InProgress,
-		ExpiryTimestamp:     time.Now().UTC(),
-	}
-	ctx := context.Background()
-	err = store.PutRecord(ctx, record)
-	require.NoError(t, err)
 }

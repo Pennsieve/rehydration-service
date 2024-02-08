@@ -38,6 +38,8 @@ test: local-services
 
 # Run dockerized tests (used on Jenkins)
 test-ci: docker-clean
+	which docker-compose
+	docker-compose --version
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests tests
 
@@ -46,6 +48,8 @@ clean: docker-clean
 
 # Spin down active docker containers.
 docker-clean:
+	which docker-compose
+	docker-compose --version
 	docker-compose -f docker-compose.test-ci.yaml down
 	docker-compose -f docker-compose.test-local.yaml down
 

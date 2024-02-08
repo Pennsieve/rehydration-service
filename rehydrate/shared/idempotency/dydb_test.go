@@ -86,12 +86,47 @@ func TestStore_UpdateRecord(t *testing.T) {
 	err = store.UpdateRecord(ctx, record)
 	require.NoError(t, err)
 
-	updated, err := store.GetRecord(ctx, record.ID)
+	scanAll := dyDB.Scan(ctx, store.table)
+	require.Len(t, scanAll, 1)
+	scanned, err := FromItem(scanAll[0])
 	require.NoError(t, err)
-	require.Equal(t, record.ID, updated.ID)
-	require.True(t, record.ExpiryTimestamp.Equal(updated.ExpiryTimestamp))
-	require.Equal(t, updatedLocation, updated.RehydrationLocation)
-	require.Equal(t, updatedStatus, updated.Status)
+	require.Equal(t, record.ID, scanned.ID)
+	require.True(t, record.ExpiryTimestamp.Equal(scanned.ExpiryTimestamp))
+	require.Equal(t, updatedLocation, scanned.RehydrationLocation)
+	require.Equal(t, updatedStatus, scanned.Status)
+}
+
+func TestStore_DeleteRecord(t *testing.T) {
+	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
+	store, err := NewStore(awsConfig, logging.Default)
+	require.NoError(t, err)
+
+	recordToDelete := Record{
+		ID:                  "1/2/",
+		RehydrationLocation: "bucket/1/2/",
+		Status:              Expired,
+		ExpiryTimestamp:     time.Now(),
+	}
+
+	recordToKeep := Record{
+		ID:                  "4/9/",
+		RehydrationLocation: "bucket/4/9/",
+		Status:              Completed,
+		ExpiryTimestamp:     time.Now(),
+	}
+
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(recordsToPutItemInputs(t, store.table, recordToDelete, recordToKeep)...)
+	defer dyDB.Teardown()
+
+	ctx := context.Background()
+	err = store.DeleteRecord(ctx, recordToDelete.ID)
+	require.NoError(t, err)
+
+	scanAll := dyDB.Scan(ctx, store.table)
+	require.Len(t, scanAll, 1)
+	scanned, err := FromItem(scanAll[0])
+	require.NoError(t, err)
+	require.True(t, scanned.Equal(recordToKeep))
 }
 
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {

@@ -113,6 +113,17 @@ func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
 	return nil
 }
 
+func (s *Store) DeleteRecord(ctx context.Context, recordID string) error {
+	in := &dynamodb.DeleteItemInput{
+		Key:       keyFromRecordID(recordID),
+		TableName: aws.String(s.table),
+	}
+	if _, err := s.client.DeleteItem(ctx, in); err != nil {
+		return fmt.Errorf("error deleting record %s: %w", recordID, err)
+	}
+	return nil
+}
+
 type RecordAlreadyExistsError struct {
 	Existing           *Record
 	UnmarshallingError error

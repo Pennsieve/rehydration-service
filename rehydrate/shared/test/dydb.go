@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -48,6 +49,26 @@ func (f *DynamoDBFixture) WithItems(inputs ...*dynamodb.PutItemInput) *DynamoDBF
 		}
 	}
 	return f
+}
+
+func (f *DynamoDBFixture) Scan(ctx context.Context, table string) []map[string]types.AttributeValue {
+	in := &dynamodb.ScanInput{
+		TableName:      aws.String(table),
+		ConsistentRead: aws.Bool(true),
+	}
+
+	var items []map[string]types.AttributeValue
+	var lastKey map[string]types.AttributeValue
+	for doScan := true; doScan; doScan = len(lastKey) > 0 {
+		in.ExclusiveStartKey = lastKey
+		out, err := f.Client.Scan(ctx, in)
+		if err != nil {
+			assert.FailNow(f.T, "error scanning test table", "table: %s, error: %v", table, err)
+		}
+		items = append(items, out.Items...)
+		lastKey = out.LastEvaluatedKey
+	}
+	return items
 }
 
 func (f *DynamoDBFixture) Teardown() {

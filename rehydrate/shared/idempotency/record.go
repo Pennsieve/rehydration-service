@@ -33,6 +33,9 @@ func StatusFromString(s string) (Status, error) {
 // idempotencyKeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
 // Must match the struct tag for Record.ID, but there does not seem to be an easy way to enforce this.
 const idempotencyKeyAttrName = "id"
+const idempotencyRehydrationLocationAttrName = "rehydrationLocation"
+const idempotencyStatusAttrName = "status"
+const idempotencyExpiryTimestampAttrName = "expiryTimestamp"
 
 type Record struct {
 	ID                  string    `dynamodbav:"id"`

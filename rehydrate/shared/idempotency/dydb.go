@@ -37,6 +37,24 @@ func NewStore(config aws.Config, logger *slog.Logger) (*Store, error) {
 	}, nil
 }
 
+func (s *Store) GetRecord(ctx context.Context, recordID string) (*Record, error) {
+	key := keyFromRecordID(recordID)
+	in := dynamodb.GetItemInput{
+		Key:            key,
+		TableName:      aws.String(s.table),
+		ConsistentRead: aws.Bool(true),
+	}
+	out, err := s.client.GetItem(ctx, &in)
+	if err != nil {
+		return nil, fmt.Errorf("error getting record with ID %s: %w", recordID, err)
+	}
+	if out.Item == nil || len(out.Item) == 0 {
+		return nil, nil
+	}
+	return FromItem(out.Item)
+
+}
+
 func (s *Store) PutRecord(ctx context.Context, record Record) error {
 	item, err := record.Item()
 	if err != nil {
@@ -65,6 +83,36 @@ func (s *Store) PutRecord(ctx context.Context, record Record) error {
 	return fmt.Errorf("error putting record %+v to %s: %w", record, s.table, err)
 }
 
+func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
+	asItem, err := record.Item()
+	if err != nil {
+		return fmt.Errorf("error marshalling record for update: %w", err)
+	}
+	expressionAttrNames := map[string]string{
+		"#location": idempotencyRehydrationLocationAttrName,
+		"#expiry":   idempotencyExpiryTimestampAttrName,
+		"#status":   idempotencyStatusAttrName,
+	}
+	expressionAttrValues := map[string]types.AttributeValue{
+		":location": asItem[idempotencyRehydrationLocationAttrName],
+		":expiry":   asItem[idempotencyExpiryTimestampAttrName],
+		":status":   asItem[idempotencyStatusAttrName],
+	}
+	updateExpression := "SET #location = :location, #expiry = :expiry, #status = :status"
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                       keyFromRecordID(record.ID),
+		TableName:                 aws.String(s.table),
+		ExpressionAttributeNames:  expressionAttrNames,
+		ExpressionAttributeValues: expressionAttrValues,
+		UpdateExpression:          aws.String(updateExpression),
+	}
+	if _, err := s.client.UpdateItem(ctx, in); err != nil {
+		return fmt.Errorf("error updating record %s: %w", record.ID, err)
+	}
+	return nil
+}
+
 type RecordAlreadyExistsError struct {
 	Existing           *Record
 	UnmarshallingError error
@@ -75,4 +123,8 @@ func (e RecordAlreadyExistsError) Error() string {
 		return fmt.Sprintf("record with ID %s already exists", e.Existing.ID)
 	}
 	return fmt.Sprintf("record with ID already exists; there was an error when unmarshalling existing Record: %v", e.UnmarshallingError)
+}
+
+func keyFromRecordID(recordID string) map[string]types.AttributeValue {
+	return map[string]types.AttributeValue{idempotencyKeyAttrName: &types.AttributeValueMemberS{Value: recordID}}
 }

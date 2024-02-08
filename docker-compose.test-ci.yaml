@@ -6,6 +6,8 @@ services:
     extends:
       service: tests
       file: docker-compose.test-common.yaml
+    depends_on:
+      - dynamodb
     environment:
       - DYNAMODB_URL=http://dynamodb:8000
   dynamodb:

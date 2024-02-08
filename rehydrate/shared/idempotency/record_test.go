@@ -1,7 +1,6 @@
 package idempotency
 
 import (
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +19,6 @@ func TestRecord_ItemRoundTrip(t *testing.T) {
 
 	item, err := record.Item()
 	require.NoError(t, err)
-	fmt.Println(item["expiryTimestamp"])
 	assert.Equal(t, &types.AttributeValueMemberS{Value: record.ID}, item["id"])
 	assert.Equal(t, &types.AttributeValueMemberS{Value: record.RehydrationLocation}, item["rehydrationLocation"])
 	assert.Equal(t, &types.AttributeValueMemberS{Value: string(InProgress)}, item["status"])

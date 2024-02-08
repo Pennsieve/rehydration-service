@@ -8,8 +8,6 @@ services:
       dockerfile: Dockerfile.test
     env_file:
       - test-common.env
-    depends_on:
-      - dynamodb
     volumes:
       - $PWD:/go/src/github.com/pennsieve/rehydration-service
 

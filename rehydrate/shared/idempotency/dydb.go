@@ -37,8 +37,17 @@ func NewStore(config aws.Config, logger *slog.Logger) (*Store, error) {
 	}, nil
 }
 
+func (s *Store) SaveInProgress(ctx context.Context, datasetID, datasetVersionID int) error {
+	recordID := recordID(datasetID, datasetVersionID)
+	record := Record{
+		ID:     recordID,
+		Status: InProgress,
+	}
+	return s.PutRecord(ctx, record)
+}
+
 func (s *Store) GetRecord(ctx context.Context, recordID string) (*Record, error) {
-	key := keyFromRecordID(recordID)
+	key := itemKeyFromRecordID(recordID)
 	in := dynamodb.GetItemInput{
 		Key:            key,
 		TableName:      aws.String(s.table),
@@ -99,7 +108,7 @@ func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
 	updateExpression := "SET #location = :location, #status = :status"
 
 	in := &dynamodb.UpdateItemInput{
-		Key:                       keyFromRecordID(record.ID),
+		Key:                       itemKeyFromRecordID(record.ID),
 		TableName:                 aws.String(s.table),
 		ExpressionAttributeNames:  expressionAttrNames,
 		ExpressionAttributeValues: expressionAttrValues,
@@ -121,7 +130,7 @@ func (s *Store) SetTaskARN(ctx context.Context, recordID string, taskARN string)
 	updateExpression := "SET #taskARN = :taskARN"
 
 	in := &dynamodb.UpdateItemInput{
-		Key:                       keyFromRecordID(recordID),
+		Key:                       itemKeyFromRecordID(recordID),
 		TableName:                 aws.String(s.table),
 		ExpressionAttributeNames:  expressionAttrNames,
 		ExpressionAttributeValues: expressionAttrValues,
@@ -135,7 +144,7 @@ func (s *Store) SetTaskARN(ctx context.Context, recordID string, taskARN string)
 
 func (s *Store) DeleteRecord(ctx context.Context, recordID string) error {
 	in := &dynamodb.DeleteItemInput{
-		Key:       keyFromRecordID(recordID),
+		Key:       itemKeyFromRecordID(recordID),
 		TableName: aws.String(s.table),
 	}
 	if _, err := s.client.DeleteItem(ctx, in); err != nil {
@@ -156,6 +165,9 @@ func (e RecordAlreadyExistsError) Error() string {
 	return fmt.Sprintf("record with ID already exists; there was an error when unmarshalling existing Record: %v", e.UnmarshallingError)
 }
 
-func keyFromRecordID(recordID string) map[string]types.AttributeValue {
+func recordID(datasetID, datasetVersionID int) string {
+	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)
+}
+func itemKeyFromRecordID(recordID string) map[string]types.AttributeValue {
 	return map[string]types.AttributeValue{idempotencyKeyAttrName: &types.AttributeValueMemberS{Value: recordID}}
 }

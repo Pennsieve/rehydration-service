@@ -3,18 +3,19 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
-	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/runner"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log/slog"
+	"net/http"
 	"strings"
 )
 
@@ -30,6 +31,10 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	rehydrationRequest, err := NewRehydrationRequest(ctx, request)
 	if err != nil {
 		logger.Error("error creating RehydrationRequest", "error", err)
+		var badRequest *BadRequestError
+		if errors.As(err, &badRequest) {
+			return errorResponse(http.StatusBadRequest, err, request)
+		}
 		return errorResponse(500, err, request)
 	}
 	out, err := rehydrationRequest.handle(ctx, taskConfig)
@@ -66,17 +71,42 @@ type RehydrationRequest struct {
 	awsRequestID        string
 }
 
+type BadRequestError struct {
+	message string
+}
+
+func (e *BadRequestError) Error() string {
+	return e.message
+}
+
+func validateRequest(request models.Request) *BadRequestError {
+	if request.Dataset.ID == 0 {
+		return &BadRequestError{`missing "datasetId"`}
+	}
+	if request.Dataset.VersionID == 0 {
+		return &BadRequestError{`missing "datasetVersionId"`}
+	}
+	if len(request.User.Name) == 0 {
+		return &BadRequestError{`missing user "name"`}
+	}
+	if len(request.User.Email) == 0 {
+		return &BadRequestError{`missing user "email"`}
+	}
+	return nil
+}
+
 func NewRehydrationRequest(ctx context.Context, lambdaRequest events.APIGatewayV2HTTPRequest) (*RehydrationRequest, error) {
 	awsRequestID := lambdaRequest.RequestContext.RequestID
 
-	userClaim := authorizer.ParseClaims(lambdaRequest.RequestContext.Authorizer.Lambda).UserClaim
-	user := models.User{ID: userClaim.Id, NodeID: userClaim.NodeId}
-
-	var dataset models.Dataset
-	if err := json.Unmarshal([]byte(lambdaRequest.Body), &dataset); err != nil {
-		return nil, fmt.Errorf("error unmarshalling request body [%s]: %w", lambdaRequest.Body, err)
+	logging.Default.Info("handling request", slog.String("body", lambdaRequest.Body))
+	var request models.Request
+	if err := json.Unmarshal([]byte(lambdaRequest.Body), &request); err != nil {
+		return nil, &BadRequestError{fmt.Sprintf("error unmarshalling request body [%s]: %v", lambdaRequest.Body, err)}
 	}
-
+	if err := validateRequest(request); err != nil {
+		return nil, err
+	}
+	dataset, user := request.Dataset, request.User
 	cfg, err := AWSConfigFactory.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -84,7 +114,7 @@ func NewRehydrationRequest(ctx context.Context, lambdaRequest events.APIGatewayV
 
 	requestLogger := logging.Default.With(slog.String("requestID", awsRequestID),
 		slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionID", dataset.VersionID)),
-		slog.Group("user", slog.Int64("id", user.ID), slog.String("nodeID", user.NodeID)))
+		slog.Group("user", slog.String("name", user.Name), slog.String("email", user.Email)))
 
 	return &RehydrationRequest{
 		dataset:             dataset,

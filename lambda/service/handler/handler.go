@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log/slog"
 	"os"
@@ -28,8 +27,6 @@ func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	if lc, ok := lambdacontext.FromContext(ctx); ok {
 		logger = logger.With(slog.String("awsRequestID", lc.AwsRequestID))
 	}
-	userClaim := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda).UserClaim
-	logger = logger.With(slog.Any("userID", userClaim.Id), slog.String("userNodeID", userClaim.NodeId))
 
 	var dataset models.Dataset
 	if err := json.Unmarshal([]byte(request.Body), &dataset); err != nil {

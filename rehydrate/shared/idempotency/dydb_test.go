@@ -4,17 +4,17 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
 
+var testIdempotencyTableName = "test-idempotency-table"
+
 func TestStore_PutRecord(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
-	store, err := NewStore(awsConfig, logging.Default)
-	require.NoError(t, err)
+	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
 	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table))
 	defer dyDB.Teardown()
 
@@ -24,7 +24,7 @@ func TestStore_PutRecord(t *testing.T) {
 		Status:              InProgress,
 	}
 	ctx := context.Background()
-	err = store.PutRecord(ctx, record)
+	err := store.PutRecord(ctx, record)
 	require.NoError(t, err)
 
 	err = store.PutRecord(ctx, record)
@@ -37,8 +37,7 @@ func TestStore_PutRecord(t *testing.T) {
 
 func TestStore_GetRecord(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
-	store, err := NewStore(awsConfig, logging.Default)
-	require.NoError(t, err)
+	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:                  "1/2/",
@@ -62,8 +61,7 @@ func TestStore_GetRecord(t *testing.T) {
 
 func TestStore_UpdateRecord(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
-	store, err := NewStore(awsConfig, logging.Default)
-	require.NoError(t, err)
+	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:     "1/2/",
@@ -79,7 +77,7 @@ func TestStore_UpdateRecord(t *testing.T) {
 	record.Status = updatedStatus
 
 	ctx := context.Background()
-	err = store.UpdateRecord(ctx, record)
+	err := store.UpdateRecord(ctx, record)
 	require.NoError(t, err)
 
 	scanAll := dyDB.Scan(ctx, store.table)
@@ -93,8 +91,7 @@ func TestStore_UpdateRecord(t *testing.T) {
 
 func TestStore_SetTaskARN(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
-	store, err := NewStore(awsConfig, logging.Default)
-	require.NoError(t, err)
+	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:     "1/2/",
@@ -106,7 +103,7 @@ func TestStore_SetTaskARN(t *testing.T) {
 
 	ctx := context.Background()
 	taskARN := "arn:aws:ecs:test:test:test"
-	err = store.SetTaskARN(ctx, record.ID, taskARN)
+	err := store.SetTaskARN(ctx, record.ID, taskARN)
 	require.NoError(t, err)
 
 	scanAll := dyDB.Scan(ctx, store.table)
@@ -121,8 +118,7 @@ func TestStore_SetTaskARN(t *testing.T) {
 
 func TestStore_DeleteRecord(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
-	store, err := NewStore(awsConfig, logging.Default)
-	require.NoError(t, err)
+	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
 
 	recordToDelete := Record{
 		ID:                  "1/2/",
@@ -140,7 +136,7 @@ func TestStore_DeleteRecord(t *testing.T) {
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
-	err = store.DeleteRecord(ctx, recordToDelete.ID)
+	err := store.DeleteRecord(ctx, recordToDelete.ID)
 	require.NoError(t, err)
 
 	scanAll := dyDB.Scan(ctx, store.table)
@@ -151,22 +147,7 @@ func TestStore_DeleteRecord(t *testing.T) {
 }
 
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {
-	return &dynamodb.CreateTableInput{
-		TableName: aws.String(tableName),
-		AttributeDefinitions: []types.AttributeDefinition{
-			{
-				AttributeName: aws.String(idempotencyKeyAttrName),
-				AttributeType: types.ScalarAttributeTypeS,
-			},
-		},
-		KeySchema: []types.KeySchemaElement{
-			{
-				AttributeName: aws.String(idempotencyKeyAttrName),
-				KeyType:       types.KeyTypeHash,
-			},
-		},
-		BillingMode: types.BillingModePayPerRequest,
-	}
+	return test.IdempotencyCreateTableInput(tableName, KeyAttrName)
 }
 
 func recordsToPutItemInputs(t *testing.T, tableName string, records ...Record) []*dynamodb.PutItemInput {

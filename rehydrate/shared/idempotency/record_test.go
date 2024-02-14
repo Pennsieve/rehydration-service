@@ -17,7 +17,7 @@ func TestRecord_ItemRoundTrip(t *testing.T) {
 	item, err := record.Item()
 	require.NoError(t, err)
 	assert.Equal(t, &types.AttributeValueMemberS{Value: record.ID}, item["id"])
-	assert.Equal(t, &types.AttributeValueMemberS{Value: record.RehydrationLocation}, item["rehydrationLocation"])
+	assert.Equal(t, &types.AttributeValueMemberS{Value: record.RehydrationLocation}, item["RehydrationLocation"])
 	assert.Equal(t, &types.AttributeValueMemberS{Value: string(InProgress)}, item["status"])
 
 	unmarshalled, err := FromItem(item)

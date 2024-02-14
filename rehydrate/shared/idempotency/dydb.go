@@ -11,34 +11,38 @@ import (
 	"os"
 )
 
-const idempotencyTableNameKey = "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME"
+const TableNameKey = "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME"
 
-type Store struct {
+type DyDBStore struct {
 	client *dynamodb.Client
 	table  string
 	logger *slog.Logger
 }
 
-func NewStore(config aws.Config, logger *slog.Logger) (*Store, error) {
+func NewStore(config aws.Config, logger *slog.Logger) (Store, error) {
 
-	table, ok := os.LookupEnv(idempotencyTableNameKey)
+	table, ok := os.LookupEnv(TableNameKey)
 	if !ok {
-		return nil, fmt.Errorf("environment variable %s not set", idempotencyTableNameKey)
+		return nil, fmt.Errorf("environment variable %s not set", TableNameKey)
 	}
 	if len(table) == 0 {
-		return nil, fmt.Errorf("environment variable %s set to empty string", idempotencyTableNameKey)
+		return nil, fmt.Errorf("environment variable %s set to empty string", TableNameKey)
 
 	}
-	client := dynamodb.NewFromConfig(config)
-	return &Store{
-		client: client,
-		table:  table,
-		logger: logger,
-	}, nil
+	return newDyDBStore(config, logger, table), nil
 }
 
-func (s *Store) SaveInProgress(ctx context.Context, datasetID, datasetVersionID int) error {
-	recordID := recordID(datasetID, datasetVersionID)
+func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyDBStore {
+	client := dynamodb.NewFromConfig(config)
+	return &DyDBStore{
+		client: client,
+		table:  tableName,
+		logger: logger,
+	}
+}
+
+func (s *DyDBStore) SaveInProgress(ctx context.Context, datasetID, datasetVersionID int) error {
+	recordID := RecordID(datasetID, datasetVersionID)
 	record := Record{
 		ID:     recordID,
 		Status: InProgress,
@@ -46,7 +50,7 @@ func (s *Store) SaveInProgress(ctx context.Context, datasetID, datasetVersionID 
 	return s.PutRecord(ctx, record)
 }
 
-func (s *Store) GetRecord(ctx context.Context, recordID string) (*Record, error) {
+func (s *DyDBStore) GetRecord(ctx context.Context, recordID string) (*Record, error) {
 	key := itemKeyFromRecordID(recordID)
 	in := dynamodb.GetItemInput{
 		Key:            key,
@@ -64,12 +68,12 @@ func (s *Store) GetRecord(ctx context.Context, recordID string) (*Record, error)
 
 }
 
-func (s *Store) PutRecord(ctx context.Context, record Record) error {
+func (s *DyDBStore) PutRecord(ctx context.Context, record Record) error {
 	item, err := record.Item()
 	if err != nil {
 		return err
 	}
-	putCondition := fmt.Sprintf("attribute_not_exists(%s)", idempotencyKeyAttrName)
+	putCondition := fmt.Sprintf("attribute_not_exists(%s)", KeyAttrName)
 	in := dynamodb.PutItemInput{
 		Item:                                item,
 		TableName:                           aws.String(s.table),
@@ -92,7 +96,7 @@ func (s *Store) PutRecord(ctx context.Context, record Record) error {
 	return fmt.Errorf("error putting record %+v to %s: %w", record, s.table, err)
 }
 
-func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
+func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
 	asItem, err := record.Item()
 	if err != nil {
 		return fmt.Errorf("error marshalling record for update: %w", err)
@@ -120,7 +124,7 @@ func (s *Store) UpdateRecord(ctx context.Context, record Record) error {
 	return nil
 }
 
-func (s *Store) SetTaskARN(ctx context.Context, recordID string, taskARN string) error {
+func (s *DyDBStore) SetTaskARN(ctx context.Context, recordID string, taskARN string) error {
 	expressionAttrNames := map[string]string{
 		"#taskARN": idempotencyTaskARNAttrName,
 	}
@@ -142,7 +146,7 @@ func (s *Store) SetTaskARN(ctx context.Context, recordID string, taskARN string)
 	return nil
 }
 
-func (s *Store) DeleteRecord(ctx context.Context, recordID string) error {
+func (s *DyDBStore) DeleteRecord(ctx context.Context, recordID string) error {
 	in := &dynamodb.DeleteItemInput{
 		Key:       itemKeyFromRecordID(recordID),
 		TableName: aws.String(s.table),
@@ -165,9 +169,6 @@ func (e RecordAlreadyExistsError) Error() string {
 	return fmt.Sprintf("record with ID already exists; there was an error when unmarshalling existing Record: %v", e.UnmarshallingError)
 }
 
-func recordID(datasetID, datasetVersionID int) string {
-	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)
-}
 func itemKeyFromRecordID(recordID string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{idempotencyKeyAttrName: &types.AttributeValueMemberS{Value: recordID}}
+	return map[string]types.AttributeValue{KeyAttrName: &types.AttributeValueMemberS{Value: recordID}}
 }

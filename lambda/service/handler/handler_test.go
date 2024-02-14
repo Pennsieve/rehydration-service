@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/handler"
+	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -44,6 +47,12 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	testConfig := test.GetTestAWSConfig(t, testEndpoints, false)
 	handler.AWSConfigFactory.Set(&testConfig)
 	defer handler.AWSConfigFactory.Set(nil)
+	table, ok := os.LookupEnv(idempotency.TableNameKey)
+	if !ok || len(table) == 0 {
+		assert.FailNow(t, "idempotency table name missing from environment variables or empty", "env var name: %s", idempotency.KeyAttrName)
+	}
+	dyDB := test.NewDynamoDBFixture(t, dynamodb.NewFromConfig(testConfig), test.IdempotencyCreateTableInput(table, idempotency.KeyAttrName))
+	defer dyDB.Teardown()
 
 	ctx := context.Background()
 	requestContext := events.APIGatewayV2HTTPRequestContext{
@@ -56,7 +65,7 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	}
 	body := fmt.Sprintf(`{"datasetId": %d, "datasetVersionId": %d, "name": %q, "email": %q}`, 5056, 2, "First Last", "last@example.com")
 	request := events.APIGatewayV2HTTPRequest{
-		RouteKey:       "POST /rehydrate",
+		RouteKey:       "POST /discover/rehydrate",
 		Body:           body,
 		RequestContext: requestContext,
 	}

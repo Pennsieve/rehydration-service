@@ -28,16 +28,16 @@ func StatusFromString(s string) (Status, error) {
 	}
 }
 
-// idempotencyKeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
+// KeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
 // Must match the struct tag for Record.ID, but there does not seem to be an easy way to enforce this.
-const idempotencyKeyAttrName = "id"
-const idempotencyRehydrationLocationAttrName = "rehydrationLocation"
+const KeyAttrName = "id"
+const idempotencyRehydrationLocationAttrName = "RehydrationLocation"
 const idempotencyStatusAttrName = "status"
 const idempotencyTaskARNAttrName = "fargateTaskARN"
 
 type Record struct {
 	ID                  string `dynamodbav:"id"`
-	RehydrationLocation string `dynamodbav:"rehydrationLocation"`
+	RehydrationLocation string `dynamodbav:"RehydrationLocation"`
 	Status              Status `dynamodbav:"status"`
 	FargateTaskARN      string `dynamodbav:"fargateTaskARN"`
 }
@@ -57,4 +57,8 @@ func FromItem(item map[string]types.AttributeValue) (*Record, error) {
 		return nil, fmt.Errorf("error unmarshalling item to Record: %w", err)
 	}
 	return &record, nil
+}
+
+func RecordID(datasetID, datasetVersionID int) string {
+	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)
 }

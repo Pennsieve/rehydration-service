@@ -85,7 +85,7 @@ func (s *DyDBStore) PutRecord(ctx context.Context, record Record) error {
 	}
 	var conditionFailedError *types.ConditionalCheckFailedException
 	if errors.As(err, &conditionFailedError) {
-		alreadyExistsError := RecordAlreadyExistsError{}
+		alreadyExistsError := &RecordAlreadyExistsError{}
 		if existingRecord, err := FromItem(conditionFailedError.Item); err == nil {
 			alreadyExistsError.Existing = existingRecord
 		} else {
@@ -162,7 +162,7 @@ type RecordAlreadyExistsError struct {
 	UnmarshallingError error
 }
 
-func (e RecordAlreadyExistsError) Error() string {
+func (e *RecordAlreadyExistsError) Error() string {
 	if e.UnmarshallingError == nil {
 		return fmt.Sprintf("record with ID %s already exists", e.Existing.ID)
 	}

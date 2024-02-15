@@ -31,47 +31,14 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	expectedTaskARN := "arn:aws:ecs:test-task-arn"
-	mockECS := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		respMap := map[string][]map[string]*string{"tasks": {{"taskArn": aws.String(expectedTaskARN)}}}
-		respBytes, err := json.Marshal(respMap)
-		require.NoError(t, err)
-		respBody := string(respBytes)
-		written, err := fmt.Fprintln(writer, respBody)
-		require.NoError(t, err)
-		// +1 for the newline
-		require.Equal(t, len(respBody)+1, written)
-	}))
-	defer mockECS.Close()
+	fixture := newFixture(t, expectedTaskARN, false)
+	defer fixture.teardown()
 
-	testEndpoints := test.NewAwsEndpointMap().WithECS(mockECS.URL)
-	testConfig := test.GetTestAWSConfig(t, testEndpoints, false)
-	handler.AWSConfigFactory.Set(&testConfig)
-	defer handler.AWSConfigFactory.Set(nil)
-	table, ok := os.LookupEnv(idempotency.TableNameKey)
-	if !ok || len(table) == 0 {
-		assert.FailNow(t, "idempotency table name missing from environment variables or empty", "env var name: %s", idempotency.KeyAttrName)
-	}
-	dyDB := test.NewDynamoDBFixture(t, dynamodb.NewFromConfig(testConfig), test.IdempotencyCreateTableInput(table, idempotency.KeyAttrName))
-	defer dyDB.Teardown()
-
-	ctx := context.Background()
-	requestContext := events.APIGatewayV2HTTPRequestContext{
-		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-			Method: "POST",
-		},
-		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			Lambda: make(map[string]interface{}),
-		},
-	}
 	body := fmt.Sprintf(`{"datasetId": %d, "datasetVersionId": %d, "name": %q, "email": %q}`, 5056, 2, "First Last", "last@example.com")
-	request := events.APIGatewayV2HTTPRequest{
-		RouteKey:       "POST /discover/rehydrate",
-		Body:           body,
-		RequestContext: requestContext,
-	}
+	request := newLambdaRequest(body)
 
 	expectedStatusCode := 202
-	response, err := handler.RehydrationServiceHandler(ctx, request)
+	response, err := handler.RehydrationServiceHandler(context.Background(), request)
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
@@ -94,14 +61,6 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 	handler.AWSConfigFactory.Set(&testConfig)
 	defer handler.AWSConfigFactory.Set(nil)
 
-	requestContext := events.APIGatewayV2HTTPRequestContext{
-		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-			Method: "POST",
-		},
-		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			Lambda: make(map[string]interface{}),
-		},
-	}
 	bodyFormat := `{"datasetId": %d, "datasetVersionId": %d, "name": %q, "email": %q}`
 
 	for name, params := range map[string]struct {
@@ -118,11 +77,7 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			request := events.APIGatewayV2HTTPRequest{
-				RouteKey:       "POST /rehydrate",
-				Body:           params.body,
-				RequestContext: requestContext,
-			}
+			request := newLambdaRequest(params.body)
 
 			response, err := handler.RehydrationServiceHandler(ctx, request)
 			require.Error(t, err)
@@ -131,4 +86,79 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 			assert.Contains(t, response.Body, params.expectedResponsePart)
 		})
 	}
+}
+
+func newLambdaRequest(body string) events.APIGatewayV2HTTPRequest {
+	requestContext := events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "POST",
+		},
+		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+			Lambda: make(map[string]interface{}),
+		},
+	}
+
+	return events.APIGatewayV2HTTPRequest{
+		RouteKey:       "POST /discover/rehydrate",
+		Body:           body,
+		RequestContext: requestContext,
+	}
+}
+
+// newMockECSServer returns a new *httptest.Server that always returns the given task ARN.
+func newMockECSServer(t *testing.T, expectedTaskARN string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		respMap := map[string][]map[string]*string{"tasks": {{"taskArn": aws.String(expectedTaskARN)}}}
+		respBytes, err := json.Marshal(respMap)
+		require.NoError(t, err)
+		respBody := string(respBytes)
+		written, err := fmt.Fprintln(writer, respBody)
+		require.NoError(t, err)
+		// +1 for the newline
+		require.Equal(t, len(respBody)+1, written)
+	}))
+}
+
+type Fixture struct {
+	awsConfig        aws.Config
+	mockECS          *httptest.Server
+	dyDB             *test.DynamoDBFixture
+	idempotencyTable string
+}
+
+func newFixture(t *testing.T, expectedTaskARN string, logAWSRequests bool) *Fixture {
+	mockECS := newMockECSServer(t, expectedTaskARN)
+	awsEndpoints := test.NewAwsEndpointMap().WithECS(mockECS.URL)
+	awsConfig := test.GetTestAWSConfig(t, awsEndpoints, logAWSRequests)
+
+	handler.AWSConfigFactory.Set(&awsConfig)
+
+	table, ok := os.LookupEnv(idempotency.TableNameKey)
+	if !ok || len(table) == 0 {
+		assert.FailNow(t, "idempotency table name missing from environment variables or empty", "env var name: %s", idempotency.KeyAttrName)
+	}
+	dyDB := test.NewDynamoDBFixture(t, dynamodb.NewFromConfig(awsConfig), test.IdempotencyCreateTableInput(table, idempotency.KeyAttrName))
+
+	return &Fixture{
+		awsConfig:        awsConfig,
+		mockECS:          mockECS,
+		dyDB:             dyDB,
+		idempotencyTable: table,
+	}
+}
+
+func (f *Fixture) addIdempotencyRecords(t *testing.T, record *idempotency.Record) *Fixture {
+	inputs := test.RecordsToPutItemInputs(t, f.idempotencyTable, record)
+	f.dyDB.WithItems(inputs...)
+	return f
+}
+
+func (f *Fixture) teardown() {
+	if f.mockECS != nil {
+		f.mockECS.Close()
+	}
+	if f.dyDB != nil {
+		f.dyDB.Teardown()
+	}
+	handler.AWSConfigFactory.Set(nil)
 }

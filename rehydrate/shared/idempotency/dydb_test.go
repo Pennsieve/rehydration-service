@@ -2,7 +2,6 @@ package idempotency
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/test"
@@ -29,7 +28,7 @@ func TestStore_PutRecord(t *testing.T) {
 
 	err = store.PutRecord(ctx, record)
 	require.Error(t, err)
-	var alreadyExistsError RecordAlreadyExistsError
+	var alreadyExistsError *RecordAlreadyExistsError
 	require.ErrorAs(t, err, &alreadyExistsError)
 	require.Nil(t, alreadyExistsError.UnmarshallingError)
 	require.Equal(t, record, *alreadyExistsError.Existing)
@@ -45,7 +44,7 @@ func TestStore_GetRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(recordsToPutItemInputs(t, store.table, record)...)
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
@@ -68,7 +67,7 @@ func TestStore_UpdateRecord(t *testing.T) {
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(recordsToPutItemInputs(t, store.table, record)...)
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	updatedLocation := "bucket/1/2/"
@@ -98,7 +97,7 @@ func TestStore_SetTaskARN(t *testing.T) {
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(recordsToPutItemInputs(t, store.table, record)...)
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
@@ -132,7 +131,7 @@ func TestStore_DeleteRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(recordsToPutItemInputs(t, store.table, recordToDelete, recordToKeep)...)
+	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &recordToDelete, &recordToKeep)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
@@ -148,17 +147,4 @@ func TestStore_DeleteRecord(t *testing.T) {
 
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {
 	return test.IdempotencyCreateTableInput(tableName, KeyAttrName)
-}
-
-func recordsToPutItemInputs(t *testing.T, tableName string, records ...Record) []*dynamodb.PutItemInput {
-	var inputs []*dynamodb.PutItemInput
-	for _, record := range records {
-		item, err := record.Item()
-		require.NoError(t, err)
-		inputs = append(inputs, &dynamodb.PutItemInput{
-			Item:      item,
-			TableName: aws.String(tableName),
-		})
-	}
-	return inputs
 }

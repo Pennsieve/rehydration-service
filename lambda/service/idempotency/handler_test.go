@@ -3,6 +3,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
@@ -55,6 +56,7 @@ func TestHandler_Handle(t *testing.T) {
 	expectedTaskARN := "arn:aws:ecs:test:test:test"
 	test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
 	test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
+	test.store.OnSetTaskARNSucceed(idempotency.RecordID(dataset.ID, dataset.VersionID), expectedTaskARN).Once()
 
 	resp, err := test.handler.Handle(context.Background())
 	require.NoError(t, err)
@@ -86,24 +88,71 @@ func TestHandler_Handle_RetryOnce(t *testing.T) {
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 
 	// Fist SaveInProgress returns an error indicating that a record already exists, but does not include info about it
-	alreadyExistsError := idempotency.RecordAlreadyExistsError{}
+	alreadyExistsError := &idempotency.RecordAlreadyExistsError{}
 	test.store.OnSaveInProgressError(dataset.ID, dataset.VersionID, alreadyExistsError).Once()
 
 	// So the code attempts to look up the supposedly existing record, but gets nil. This results in
 	// an inconsistent state error indicating that the record must have been deleted between SaveInProgress and GetRecord
 	// This should cause a retry
-	test.store.OnGetRecordReturn(idempotency.RecordID(dataset.ID, dataset.VersionID), nil).Once()
+	recordID := idempotency.RecordID(dataset.ID, dataset.VersionID)
+	test.store.OnGetRecordReturn(recordID, nil).Once()
 
 	// On the retry SaveInProgress now returns success to indicate that a new record was created
 	test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
 
 	test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
 
+	test.store.OnSetTaskARNSucceed(recordID, expectedTaskARN).Once()
+
 	resp, err := test.handler.Handle(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, expectedTaskARN, resp.TaskARN)
 	require.Empty(t, resp.RehydrationLocation)
 	test.assertMockAssertions(t)
+}
+
+func TestHandler_Handle_RetryMultiple(t *testing.T) {
+	dataset := models.Dataset{ID: 4321, VersionID: 3}
+	user := models.User{Name: "First Last", Email: "last@example.com"}
+	recordID := idempotency.RecordID(dataset.ID, dataset.VersionID)
+
+	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
+
+	// Fist SaveInProgress returns an error indicating that a record already exists, but does not include info about it
+	alreadyExistsError := &idempotency.RecordAlreadyExistsError{Existing: &idempotency.Record{
+		ID:                  recordID,
+		RehydrationLocation: "/some/old/location",
+		Status:              idempotency.Expired,
+	}}
+
+	for i := 0; i <= maxRetries; i++ {
+		retryableErrorCount := i + 1
+		t.Run(fmt.Sprintf("%d retryable errors", retryableErrorCount), func(t *testing.T) {
+			test := newHandlerTest(dataset, user)
+
+			test.store.OnSaveInProgressError(dataset.ID, dataset.VersionID, alreadyExistsError).Times(retryableErrorCount)
+
+			outOfRetries := i == maxRetries
+			if outOfRetries {
+				_, err := test.handler.Handle(context.Background())
+				require.Error(t, err)
+				var expiredError ExpiredError
+				require.ErrorAs(t, err, &expiredError)
+
+			} else {
+				test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
+
+				test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
+
+				test.store.OnSetTaskARNSucceed(recordID, expectedTaskARN).Once()
+				resp, err := test.handler.Handle(context.Background())
+				require.NoError(t, err)
+				require.Equal(t, expectedTaskARN, resp.TaskARN)
+				require.Empty(t, resp.RehydrationLocation)
+			}
+			test.assertMockAssertions(t)
+		})
+	}
 }
 
 type MockStore struct {

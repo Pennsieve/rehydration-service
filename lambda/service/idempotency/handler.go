@@ -42,17 +42,30 @@ func (h *Handler) Handle(ctx context.Context) (response *Response, err error) {
 	for retry, i := true, 0; retry; i++ {
 		h.request.Logger.Info("idempotency Handler", slog.Int("attempt", i))
 		response, err = h.processIdempotency(ctx, datasetID, datasetVersionID)
-		var inconsistentStateError InconsistentStateError
-		retry = err != nil && errors.As(err, &inconsistentStateError) && i < maxRetries
+		retry = err != nil && isRetryableError(err) && i < maxRetries
+		if retry {
+			h.request.Logger.Info("retrying on retryable error", slog.Any("retryable", err))
+		}
 	}
 	return
+}
+
+func isRetryableError(err error) bool {
+	var inconsistentStateError InconsistentStateError
+	var expiredError ExpiredError
+	switch {
+	case errors.As(err, &inconsistentStateError), errors.As(err, &expiredError):
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handler) processIdempotency(ctx context.Context, datasetID, datasetVersionID int) (*Response, error) {
 	// try to create a new idempotency record; error if one exists
 	if err := h.store.SaveInProgress(ctx, datasetID, datasetVersionID); err != nil {
 		// If a record exists, respond with an existing rehydration location if we can, otherwise an error
-		var recordAlreadyExistsError idempotency.RecordAlreadyExistsError
+		var recordAlreadyExistsError *idempotency.RecordAlreadyExistsError
 		if errors.As(err, &recordAlreadyExistsError) {
 			record, err := h.getIdempotencyRecord(ctx, datasetID, datasetVersionID, recordAlreadyExistsError)
 			if err != nil {
@@ -68,8 +81,8 @@ func (h *Handler) processIdempotency(ctx context.Context, datasetID, datasetVers
 
 }
 
-func (h *Handler) getIdempotencyRecord(ctx context.Context, datasetID, datasetVersionID int, alreadyExistsError idempotency.RecordAlreadyExistsError) (*idempotency.Record, error) {
-	if alreadyExistsError.Existing != nil {
+func (h *Handler) getIdempotencyRecord(ctx context.Context, datasetID, datasetVersionID int, alreadyExistsError *idempotency.RecordAlreadyExistsError) (*idempotency.Record, error) {
+	if alreadyExistsError != nil && alreadyExistsError.Existing != nil {
 		return alreadyExistsError.Existing, nil
 	}
 	recordID := idempotency.RecordID(datasetID, datasetVersionID)
@@ -96,9 +109,18 @@ func (h *Handler) handleForStatus(record *idempotency.Record) (*Response, error)
 }
 
 func (h *Handler) startRehydrationTask(ctx context.Context) (*Response, error) {
+	recordID := idempotency.RecordID(h.request.Dataset.ID, h.request.Dataset.VersionID)
 	taskARN, err := h.ecsHandler.Handle(ctx, h.request.Dataset, h.request.Logger)
 	if err != nil {
+		deleteErr := h.store.DeleteRecord(ctx, recordID)
+		if deleteErr != nil {
+			return nil, fmt.Errorf("error starting rehydration task: %w, in addition, there was an error when deleting the idempotency record: %w", err, deleteErr)
+		}
 		return nil, err
+	}
+	if err := h.store.SetTaskARN(ctx, recordID, taskARN); err != nil {
+		// seems wrong to fail the request because of this, but I'm not sure
+		h.request.Logger.Error("error setting taskARN of rehydration", slog.String("taskARN", taskARN), slog.Any("error", err))
 	}
 	return &Response{TaskARN: taskARN}, nil
 }

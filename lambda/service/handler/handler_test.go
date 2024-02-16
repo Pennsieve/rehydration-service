@@ -164,6 +164,31 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	assert.Equal(t, completed, *record)
 }
 
+func TestRehydrationServiceHandler_ECSError(t *testing.T) {
+	rehydrationServiceHandlerEnv.Setenv(t)
+
+	expectedStatusCode := 500
+	errorBody := `{"code": "ECSError", "message": "server error on ECS"}`
+	fixture := NewFixtureBuilder(t).withECSError(expectedStatusCode, errorBody).withIdempotencyTable().build()
+	defer fixture.teardown()
+
+	dataset := models.Dataset{ID: 5065, VersionID: 2}
+	user := models.User{Name: "First Last", Email: "last@example.com"}
+	request := models.Request{
+		Dataset: dataset,
+		User:    user,
+	}
+	lambdaRequest := newLambdaRequest(requestToBody(t, request))
+	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
+	require.Error(t, err)
+	assert.Equal(t, expectedStatusCode, response.StatusCode,
+		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
+	fmt.Println(response.Body)
+
+	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
+	require.Len(t, scanned, 0)
+}
+
 func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
@@ -193,6 +218,12 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 			assert.Contains(t, response.Body, params.expectedResponsePart)
 		})
 	}
+}
+
+func requestToBody(t *testing.T, request models.Request) string {
+	bytes, err := json.Marshal(request)
+	require.NoError(t, err)
+	return string(bytes)
 }
 
 func newLambdaRequest(body string) events.APIGatewayV2HTTPRequest {
@@ -233,6 +264,16 @@ func assertNoECSCallsHandlerFunction(t *testing.T) http.HandlerFunc {
 	}
 }
 
+func returnErrorHandlerFunction(t *testing.T, returnStatus int, returnBody string) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(returnStatus)
+		written, err := fmt.Fprintln(writer, returnBody)
+		require.NoError(t, err)
+		// +1 for the newline
+		require.Equal(t, len(returnBody)+1, written)
+	}
+}
+
 type Fixture struct {
 	awsConfig        aws.Config
 	mockECS          *httptest.Server
@@ -248,12 +289,6 @@ func (f *Fixture) teardown() {
 		f.dyDB.Teardown()
 	}
 	handler.AWSConfigFactory.Set(nil)
-}
-
-func requestToBody(t *testing.T, request models.Request) string {
-	bytes, err := json.Marshal(request)
-	require.NoError(t, err)
-	return string(bytes)
 }
 
 type FixtureBuilder struct {
@@ -273,6 +308,13 @@ func NewFixtureBuilder(t *testing.T) *FixtureBuilder {
 // the mock ECS server will fail the test if any request are received.
 func (b *FixtureBuilder) withExpectedTaskARN(expectedTaskARN string) *FixtureBuilder {
 	b.mockECSHandlerFunction = taskARNHandlerFunction(b.testingT, expectedTaskARN)
+	return b
+}
+
+// Built Fixture will have a mock ECS server that will always return the given error. If this method is not called,
+// the mock ECS server will fail the test if any request are received.
+func (b *FixtureBuilder) withECSError(httpStatus int, responseBody string) *FixtureBuilder {
+	b.mockECSHandlerFunction = returnErrorHandlerFunction(b.testingT, httpStatus, responseBody)
 	return b
 }
 

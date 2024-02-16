@@ -18,7 +18,8 @@ type DynamoDBFixture struct {
 	context context.Context
 }
 
-func NewDynamoDBFixture(t *testing.T, client *dynamodb.Client, inputs ...*dynamodb.CreateTableInput) *DynamoDBFixture {
+func NewDynamoDBFixture(t *testing.T, awsConfig aws.Config, inputs ...*dynamodb.CreateTableInput) *DynamoDBFixture {
+	client := dynamodb.NewFromConfig(awsConfig)
 	f := DynamoDBFixture{
 		Fixture: Fixture{T: t},
 		Client:  client,

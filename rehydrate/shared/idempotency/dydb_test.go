@@ -14,7 +14,7 @@ var testIdempotencyTableName = "test-idempotency-table"
 func TestStore_PutRecord(t *testing.T) {
 	awsConfig := test.GetTestAWSConfig(t, test.NewAwsEndpointMap(), false)
 	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table))
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table))
 	defer dyDB.Teardown()
 
 	record := Record{
@@ -44,7 +44,7 @@ func TestStore_GetRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
@@ -67,7 +67,7 @@ func TestStore_UpdateRecord(t *testing.T) {
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	updatedLocation := "bucket/1/2/"
@@ -97,7 +97,7 @@ func TestStore_SetTaskARN(t *testing.T) {
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &record)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()
@@ -131,7 +131,7 @@ func TestStore_DeleteRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, store.client, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &recordToDelete, &recordToKeep)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.RecordsToPutItemInputs(t, store.table, &recordToDelete, &recordToKeep)...)
 	defer dyDB.Teardown()
 
 	ctx := context.Background()

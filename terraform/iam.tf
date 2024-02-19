@@ -46,10 +46,10 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
       data.aws_kms_key.ssm_kms_key.arn,
     ]
   }
-  
+
   statement {
-    sid    = "TaskS3Permissions"
-    effect = "Allow"
+    sid     = "TaskS3Permissions"
+    effect  = "Allow"
     actions = [
       "s3:List*",
     ]
@@ -58,7 +58,7 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     ]
   }
 
-statement {
+  statement {
     effect = "Allow"
 
     actions = [
@@ -71,8 +71,8 @@ statement {
     ]
   }
   statement {
-    sid    = "TaskLogPermissions"
-    effect = "Allow"
+    sid     = "TaskLogPermissions"
+    effect  = "Allow"
     actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
@@ -136,8 +136,8 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 
   statement {
-    sid    = "RehydrationLambdaPermissions"
-    effect = "Allow"
+    sid     = "RehydrationLambdaPermissions"
+    effect  = "Allow"
     actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
@@ -154,8 +154,8 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 
   statement {
-    sid    = "ECSTaskPermissions"
-    effect = "Allow"
+    sid     = "ECSTaskPermissions"
+    effect  = "Allow"
     actions = [
       "ecs:DescribeTasks",
       "ecs:RunTask",
@@ -165,8 +165,8 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 
   statement {
-    sid    = "ECSPassRole"
-    effect = "Allow"
+    sid     = "ECSPassRole"
+    effect  = "Allow"
     actions = [
       "iam:PassRole",
     ]
@@ -185,7 +185,27 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
       "ssm:GetParametersByPath",
     ]
 
-    resources = ["arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}/*"]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}/*"
+    ]
+  }
+
+  statement {
+    sid    = "RehydrationLambdaLambdaDynamoDBPermissions"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:UpdateItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+
+    resources = [
+      aws_dynamodb_table.idempotency_table.arn,
+      "${aws_dynamodb_table.idempotency_table.arn}/*",
+    ]
+
   }
 }
 

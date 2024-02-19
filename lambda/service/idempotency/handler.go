@@ -2,6 +2,7 @@ package idempotency
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -32,8 +33,16 @@ func NewHandler(awsConfig aws.Config, req *request.RehydrationRequest, ecsHandle
 }
 
 type Response struct {
-	RehydrationLocation string
-	TaskARN             string
+	RehydrationLocation string `json:"rehydrationLocation"`
+	TaskARN             string `json:"taskARN"`
+}
+
+func (r *Response) String() (string, error) {
+	bytes, err := json.Marshal(r)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling Response: %w", err)
+	}
+	return string(bytes), nil
 }
 
 func (h *Handler) Handle(ctx context.Context) (response *Response, err error) {
@@ -104,7 +113,9 @@ func (h *Handler) handleForStatus(record *idempotency.Record) (*Response, error)
 	case idempotency.InProgress:
 		return nil, InProgressError{fmt.Sprintf("rehydration already in progress for %s", record.ID)}
 	default:
-		return &Response{RehydrationLocation: record.RehydrationLocation}, nil
+		return &Response{
+			RehydrationLocation: record.RehydrationLocation,
+			TaskARN:             record.FargateTaskARN}, nil
 	}
 }
 

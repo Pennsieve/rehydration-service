@@ -12,6 +12,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
+	"log/slog"
 	"net/http"
 )
 
@@ -45,7 +46,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 
 	handler, err := idempotency.NewHandler(*awsConfig, rehydrationRequest, ecsHandler)
 	if err != nil {
-		logger.Error("error creating idempotency handler", "error", err)
+		rehydrationRequest.Logger.Error("error creating idempotency handler", "error", err)
 		return errorResponse(500, err, lambdaRequest)
 	}
 
@@ -54,10 +55,15 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		rehydrationRequest.Logger.Error("error handling RehydrationRequest", "error", err)
 		return errorResponse(500, err, lambdaRequest)
 	}
+	respBody, err := out.String()
+	if err != nil {
+		rehydrationRequest.Logger.Error("unable to marshall successful response", slog.Any("error", err))
+		return errorResponse(500, err, lambdaRequest)
+	}
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 202,
 		Headers:    map[string]string{"Content-Type": "application/json"},
-		Body:       fmt.Sprintf(`{"rehydrationARN": %q}`, out),
+		Body:       respBody,
 	}, nil
 }
 

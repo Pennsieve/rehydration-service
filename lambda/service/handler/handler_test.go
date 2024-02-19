@@ -156,6 +156,7 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	assert.Contains(t, response.Body, completed.RehydrationLocation)
+	assert.Contains(t, response.Body, completed.FargateTaskARN)
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)

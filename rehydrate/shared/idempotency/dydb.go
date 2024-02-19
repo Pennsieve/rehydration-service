@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log/slog"
-	"os"
 )
 
 const TableNameKey = "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME"
@@ -19,17 +18,8 @@ type DyDBStore struct {
 	logger *slog.Logger
 }
 
-func NewStore(config aws.Config, logger *slog.Logger) (Store, error) {
-
-	table, ok := os.LookupEnv(TableNameKey)
-	if !ok {
-		return nil, fmt.Errorf("environment variable %s not set", TableNameKey)
-	}
-	if len(table) == 0 {
-		return nil, fmt.Errorf("environment variable %s set to empty string", TableNameKey)
-
-	}
-	return newDyDBStore(config, logger, table), nil
+func NewStore(config aws.Config, logger *slog.Logger, tableName string) (Store, error) {
+	return newDyDBStore(config, logger, tableName), nil
 }
 
 func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyDBStore {

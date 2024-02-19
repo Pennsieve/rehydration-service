@@ -14,14 +14,18 @@ import (
 
 const maxRetries = 2
 
+type Config struct {
+	AWSConfig        aws.Config
+	IdempotencyTable string
+}
 type Handler struct {
 	store      idempotency.Store
 	request    *request.RehydrationRequest
 	ecsHandler ecs.Handler
 }
 
-func NewHandler(awsConfig aws.Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) (*Handler, error) {
-	store, err := idempotency.NewStore(awsConfig, req.Logger)
+func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) (*Handler, error) {
+	store, err := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
 	if err != nil {
 		return nil, err
 	}

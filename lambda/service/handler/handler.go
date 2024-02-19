@@ -44,7 +44,12 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		return errorResponse(500, err, lambdaRequest)
 	}
 
-	handler, err := idempotency.NewHandler(*awsConfig, rehydrationRequest, ecsHandler)
+	idempotencyConfig := idempotency.Config{
+		AWSConfig:        *awsConfig,
+		IdempotencyTable: taskConfig.IdempotencyTableName,
+	}
+
+	handler, err := idempotency.NewHandler(idempotencyConfig, rehydrationRequest, ecsHandler)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating idempotency handler", "error", err)
 		return errorResponse(500, err, lambdaRequest)

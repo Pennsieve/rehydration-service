@@ -5,6 +5,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type ECSTaskConfig struct {
 	SecurityGroup        string
 	TaskDefContainerName string
 	Environment          string
+	IdempotencyTableName string
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
@@ -49,6 +51,10 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	idepotencyTable, err := nonEmptyFromEnvVar(idempotency.TableNameKey)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ECSTaskConfig{
 		TaskDefinitionARN:    taskDefinitionArn,
@@ -57,6 +63,7 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		SecurityGroup:        securityGroup,
 		TaskDefContainerName: taskDefContainerName,
 		Environment:          envValue,
+		IdempotencyTableName: idepotencyTable,
 	}, nil
 }
 
@@ -99,6 +106,10 @@ func (t *ECSTaskConfig) RunTaskInput(dataset Dataset) *ecs.RunTaskInput {
 						{
 							Name:  aws.String(ecsTaskEnvKey),
 							Value: aws.String(t.Environment),
+						},
+						{
+							Name:  aws.String(idempotency.TableNameKey),
+							Value: aws.String(t.IdempotencyTableName),
 						},
 					},
 				},

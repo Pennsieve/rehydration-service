@@ -37,7 +37,7 @@ func main() {
 	}
 
 	var fileErrors []error
-	for _, result := range results {
+	for _, result := range results.FileResults {
 		if result.Error != nil {
 			rehydrator.logger.Error("error rehydrating file", result.LogGroups()...)
 			fileErrors = append(fileErrors, result.Error)
@@ -51,6 +51,10 @@ func main() {
 	//TODO update DynamoDB with success
 }
 
+type RehydrationResult struct {
+	Location    string
+	FileResults []FileRehydrationResult
+}
 type FileRehydrationResult struct {
 	Worker      int
 	Rehydration *Rehydration
@@ -115,7 +119,7 @@ func NewDatasetRehydrator(ctx context.Context) (*DatasetRehydrator, error) {
 	}, nil
 }
 
-func (dr *DatasetRehydrator) rehydrate(ctx context.Context) ([]FileRehydrationResult, error) {
+func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult, error) {
 	dr.logger.Info("Running rehydrate task")
 	dataset32 := int32(dr.datasetID)
 	version32 := int32(dr.versionID)
@@ -124,7 +128,10 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) ([]FileRehydrationRe
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving dataset by version: %w", err)
 	}
-
+	destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionResponse.Uri)
+	if err != nil {
+		return nil, err
+	}
 	datasetMetadataByVersionResponse, err := dr.pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, dataset32, version32)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving dataset metadata by version: %w", err)
@@ -145,7 +152,6 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) ([]FileRehydrationRe
 
 	// create work
 	for _, j := range datasetMetadataByVersionResponse.Files {
-		destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionResponse.Uri)
 		if err != nil {
 			return nil, err
 		}
@@ -164,8 +170,8 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) ([]FileRehydrationRe
 				Path:       j.Path},
 			DestinationObject{
 				Bucket: destinationBucket,
-				Key: utils.CreateDestinationKey(datasetByVersionResponse.ID,
-					datasetByVersionResponse.Version,
+				Key: utils.CreateDestinationKey(dr.datasetID,
+					dr.versionID,
 					j.Path),
 			})
 	}
@@ -179,5 +185,8 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) ([]FileRehydrationRe
 	}
 
 	dr.logger.Info("Rehydration complete")
-	return fileResults, nil
+	return &RehydrationResult{
+		Location:    utils.RehydrationLocation(destinationBucket, dr.datasetID, dr.versionID),
+		FileResults: fileResults,
+	}, nil
 }

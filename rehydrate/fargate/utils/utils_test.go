@@ -1,14 +1,16 @@
 package utils_test
 
 import (
+	"fmt"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 func TestCreateDestinationKey(t *testing.T) {
-	datasetId := int32(5070)
-	versionId := int32(2)
+	datasetId := 5070
+	versionId := 2
 	path := "files/testfile.txt"
 	destinationKey := utils.CreateDestinationKey(datasetId, versionId, path)
 	expectedDestinationKey := "rehydrated/5070/2/files/testfile.txt"
@@ -37,4 +39,13 @@ func TestCreateVersionedSource(t *testing.T) {
 	if result != expectedResult {
 		t.Errorf("got %s, expected %s", result, expectedResult)
 	}
+}
+
+func TestRehydrationLocation(t *testing.T) {
+	destinationBucket := "destination-bucket"
+	datasetId := 5070
+	versionId := 2
+	expectedLocation := fmt.Sprintf("s3://%s/rehydrated/%d/%d", destinationBucket, datasetId, versionId)
+	location := utils.RehydrationLocation(destinationBucket, datasetId, versionId)
+	require.Equal(t, expectedLocation, location)
 }

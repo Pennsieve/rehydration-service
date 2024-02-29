@@ -14,10 +14,9 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 )
 
@@ -32,14 +31,15 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
-	expectedTaskARN := "arn:aws:ecs:test-task-arn"
-	fixture := NewFixtureBuilder(t).withExpectedTaskARN(expectedTaskARN).withIdempotencyTable().build()
-	defer fixture.teardown()
-
 	request := models.Request{
 		Dataset: models.Dataset{ID: 5065, VersionID: 2},
 		User:    models.User{Name: "First Last", Email: "last@example.com"},
 	}
+	expectedTaskARN := "arn:aws:ecs:test-task-arn"
+
+	fixture := NewFixtureBuilder(t).withECSRequestAssertionFunc(request).withExpectedTaskARN(expectedTaskARN).withIdempotencyTable().build()
+	defer fixture.teardown()
+
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
 	ctx := context.Background()
 	expectedStatusCode := 202
@@ -244,48 +244,23 @@ func newLambdaRequest(body string) events.APIGatewayV2HTTPRequest {
 	}
 }
 
-func taskARNHandlerFunction(t *testing.T, expectedTaskARN string) http.HandlerFunc {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		respMap := map[string][]map[string]*string{"tasks": {{"taskArn": aws.String(expectedTaskARN)}}}
-		respBytes, err := json.Marshal(respMap)
-		require.NoError(t, err)
-		respBody := string(respBytes)
-		written, err := fmt.Fprintln(writer, respBody)
-		require.NoError(t, err)
-		// +1 for the newline
-		require.Equal(t, len(respBody)+1, written)
-	}
-}
-
-func assertNoECSCallsHandlerFunction(t *testing.T) http.HandlerFunc {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		requestBody, err := io.ReadAll(request.Body)
-		require.NoError(t, err)
-		assert.FailNow(t, "unexpected call to ECS endpoint", "request body: %s", string(requestBody))
-	}
-}
-
-func returnErrorHandlerFunction(t *testing.T, returnStatus int, returnBody string) http.HandlerFunc {
-	return func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(returnStatus)
-		written, err := fmt.Fprintln(writer, returnBody)
-		require.NoError(t, err)
-		// +1 for the newline
-		require.Equal(t, len(returnBody)+1, written)
-	}
+func taskARNResponse(t require.TestingT, expectedTaskARN string) *test.HTTPTestResponse {
+	respMap := map[string][]map[string]*string{"tasks": {{"taskArn": aws.String(expectedTaskARN)}}}
+	respBytes, err := json.Marshal(respMap)
+	require.NoError(t, err)
+	respBody := string(respBytes)
+	return &test.HTTPTestResponse{Body: respBody}
 }
 
 type Fixture struct {
 	awsConfig        aws.Config
-	mockECS          *httptest.Server
+	mockECS2         test.HTTPTestFixture
 	dyDB             *test.DynamoDBFixture
 	idempotencyTable string
 }
 
 func (f *Fixture) teardown() {
-	if f.mockECS != nil {
-		f.mockECS.Close()
-	}
+	f.mockECS2.Teardown()
 	if f.dyDB != nil {
 		f.dyDB.Teardown()
 	}
@@ -293,12 +268,13 @@ func (f *Fixture) teardown() {
 }
 
 type FixtureBuilder struct {
-	testingT               *testing.T
-	logAWSRequests         bool
-	mockECSHandlerFunction http.HandlerFunc
-	createTableInputs      []*dynamodb.CreateTableInput
-	putItemInputs          []*dynamodb.PutItemInput
-	idempotencyTableName   string
+	testingT                *testing.T
+	logAWSRequests          bool
+	mockECSResponse         *test.HTTPTestResponse
+	ecsRequestAssertionFunc test.RequestAssertionFunc
+	createTableInputs       []*dynamodb.CreateTableInput
+	putItemInputs           []*dynamodb.PutItemInput
+	idempotencyTableName    string
 }
 
 func NewFixtureBuilder(t *testing.T) *FixtureBuilder {
@@ -308,15 +284,60 @@ func NewFixtureBuilder(t *testing.T) *FixtureBuilder {
 // Built Fixture will have a mock ECS server that will always return the given task ARN. If this method is not called,
 // the mock ECS server will fail the test if any request are received.
 func (b *FixtureBuilder) withExpectedTaskARN(expectedTaskARN string) *FixtureBuilder {
-	b.mockECSHandlerFunction = taskARNHandlerFunction(b.testingT, expectedTaskARN)
+	b.mockECSResponse = taskARNResponse(b.testingT, expectedTaskARN)
 	return b
 }
 
 // Built Fixture will have a mock ECS server that will always return the given error. If this method is not called,
 // the mock ECS server will fail the test if any request are received.
 func (b *FixtureBuilder) withECSError(httpStatus int, responseBody string) *FixtureBuilder {
-	b.mockECSHandlerFunction = returnErrorHandlerFunction(b.testingT, httpStatus, responseBody)
+	b.mockECSResponse = &test.HTTPTestResponse{Status: httpStatus, Body: responseBody}
 	return b
+}
+
+func (b *FixtureBuilder) withECSRequestAssertionFunc(rehydrationReq models.Request) *FixtureBuilder {
+	expectedContainerOverrides := expectedECSContainerOverrides(b.testingT, rehydrationReq)
+	b.ecsRequestAssertionFunc = func(t require.TestingT, request *http.Request) bool {
+		// Ideally, we'd decode the body into the RunTaskInput struct that it represents, but
+		// AWS has something specialized going on, so a straight application of the json package
+		// does not Unmarshall the way we want.
+		var reqMap map[string]any
+		err := json.NewDecoder(request.Body).Decode(&reqMap)
+		if decoded := assert.NoError(t, err, "error decoding request body to a map"); !decoded {
+			return decoded
+		}
+		overrides := reqMap["overrides"].(map[string]any)
+		containerOverridesSlice := overrides["containerOverrides"].([]any)
+		containerOverrides := containerOverridesSlice[0].(map[string]any)
+		fmt.Printf("%#v", containerOverrides)
+		if passed := assertECSContainerOverridesEqual(t, expectedContainerOverrides, containerOverrides); !passed {
+			return false
+		}
+		return true
+	}
+	return b
+}
+
+func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Request) map[string]any {
+	envValue, ok := os.LookupEnv("ENV")
+	require.True(t, ok, "env variable ENV is not set")
+	idempotencyTableValue, ok := os.LookupEnv("FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME")
+	require.True(t, ok, "env variable FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME is not set")
+	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
+	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
+	return map[string]any{
+		"environment": []any{
+			map[string]any{"name": "ENV", "value": envValue},
+			map[string]any{"name": "DATASET_ID", "value": strconv.Itoa(rehydrationReq.Dataset.ID)},
+			map[string]any{"name": "DATASET_VERSION_ID", "value": strconv.Itoa(rehydrationReq.Dataset.VersionID)},
+			map[string]any{"name": "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME", "value": idempotencyTableValue}},
+		"name": containerNameValue}
+}
+
+func assertECSContainerOverridesEqual(t require.TestingT, expected map[string]any, actual map[string]any) bool {
+	expectedName, actualName := expected["name"], actual["name"]
+	expectedEnv, actualEnv := expected["environment"], actual["environment"]
+	return assert.Equal(t, expectedName, actualName) && assert.ElementsMatch(t, expectedEnv, actualEnv)
 }
 
 func (b *FixtureBuilder) withIdempotencyTable() *FixtureBuilder {
@@ -346,20 +367,19 @@ func (b *FixtureBuilder) withLoggedAWSRequests() *FixtureBuilder {
 }
 
 func (b *FixtureBuilder) build() *Fixture {
-	if b.mockECSHandlerFunction == nil {
-		b.mockECSHandlerFunction = assertNoECSCallsHandlerFunction(b.testingT)
-	}
-	mockECS := httptest.NewServer(b.mockECSHandlerFunction)
+	mockECS := test.NewHTTPTestFixture(b.testingT, b.ecsRequestAssertionFunc, b.mockECSResponse)
 
-	awsEndpoints := test.NewAwsEndpointMap().WithECS(mockECS.URL)
-	awsConfig := test.GetTestAWSConfig(b.testingT, awsEndpoints, b.logAWSRequests)
+	awsConfig := test.NewAWSEndpoints(b.testingT).
+		WithDynamoDB().
+		WithECS(mockECS.Server.URL).
+		Config(context.Background(), b.logAWSRequests)
 	handler.AWSConfigFactory.Set(&awsConfig)
 
 	dyDB := test.NewDynamoDBFixture(b.testingT, awsConfig, b.createTableInputs...).WithItems(b.putItemInputs...)
 
 	return &Fixture{
 		awsConfig:        awsConfig,
-		mockECS:          mockECS,
+		mockECS2:         mockECS,
 		dyDB:             dyDB,
 		idempotencyTable: b.idempotencyTableName,
 	}

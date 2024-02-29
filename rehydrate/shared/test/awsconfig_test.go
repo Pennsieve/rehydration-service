@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestAWSEndpointMap_WithSQS(t *testing.T) {
+func TestAWSEndpoints_WithSQS(t *testing.T) {
 	mockSQSURL := "http://mock-sqs-endpoint"
-	m := NewAwsEndpointMap().WithSQS(mockSQSURL)
-	require.Contains(t, m, sqs.ServiceID)
-	require.Equal(t, mockSQSURL, m[sqs.ServiceID].URL)
+	m := NewAWSEndpoints(t).WithSQS(mockSQSURL)
+	require.Contains(t, m.serviceIDToEndpoint, sqs.ServiceID)
+	require.Equal(t, mockSQSURL, m.serviceIDToEndpoint[sqs.ServiceID].URL)
 }

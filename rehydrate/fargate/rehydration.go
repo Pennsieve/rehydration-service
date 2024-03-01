@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
@@ -53,8 +54,8 @@ func (d DestinationObject) GetKey() string {
 
 // rehydration composite object - Source and Destination
 type Rehydration struct {
-	Src  Source
-	Dest Destination
+	Src  objects.Source
+	Dest objects.Destination
 }
 
 func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
@@ -65,7 +66,7 @@ func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
 // Example usage: slog.Info("file rehydration complete", r.LogGroups()...)
 // or slog.Error("file rehydration failed", r.LogGroups(slog.Any("error", err))...)
 func (r *Rehydration) LogGroups(additionalArgs ...any) []any {
-	groups := []any{SourceLogGroup(r.Src), DestinationLogGroup(r.Dest)}
+	groups := []any{objects.SourceLogGroup(r.Src), objects.DestinationLogGroup(r.Dest)}
 	groups = append(groups, additionalArgs)
 	return groups
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
@@ -16,14 +17,22 @@ var awsConfigFactory = awsconfig.NewFactory()
 
 func main() {
 	ctx := context.Background()
-	rehydrator, err := NewDatasetRehydrator(ctx)
+	awsConfig, err := awsConfigFactory.Get(ctx)
 	if err != nil {
-		logging.Default.Error("error creating DatasetRehydrator: %v", err)
+		logging.Default.Error("error getting AWS config: %v", err)
 		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
+	configEnv, err := config.LookupEnv()
+	if err != nil {
+		logging.Default.Error("error getting taskConfig environment variables: %v", err)
+		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
+		os.Exit(1)
+	}
+	taskConfig := config.NewConfig(*awsConfig, configEnv)
 
-	idempotencyStore, err := idempotencyStoreFromEnv(rehydrator)
+	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
+	idempotencyStore, err := taskConfig.IdempotencyStore()
 	if err != nil {
 		rehydrator.logger.Error("error creating idempotencyStore: %v", err)
 		rehydrator.logger.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
@@ -68,13 +77,4 @@ func RehydrationTaskHandler(ctx context.Context, rehydrator *DatasetRehydrator, 
 	}
 	//TODO update per-user DynamoDB with success
 	return nil
-}
-
-func idempotencyStoreFromEnv(rehydrator *DatasetRehydrator) (idempotency.Store, error) {
-	table := os.Getenv(idempotency.TableNameKey)
-	if len(table) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			idempotency.TableNameKey)
-	}
-	return idempotency.NewStore(rehydrator.awsConfig, rehydrator.logger, table)
 }

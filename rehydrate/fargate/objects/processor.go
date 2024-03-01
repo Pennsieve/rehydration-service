@@ -1,4 +1,4 @@
-package main
+package objects
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 )
 
 // defines a generic object processor
-type ObjectProcessor interface {
+type Processor interface {
 	Copy(context.Context, Source, Destination) error // copy a source object to a destination
 }
 

@@ -4,47 +4,32 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
+	"github.com/pennsieve/rehydration-service/fargate/config"
+	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
-	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"log/slog"
-	"os"
-	"strconv"
 )
 
 type DatasetRehydrator struct {
 	dataset         *models.Dataset
 	user            *models.User
 	pennsieveClient *pennsieve.Client
+	processor       objects.Processor
 	awsConfig       aws.Config
 	logger          *slog.Logger
 }
 
-func NewDatasetRehydrator(ctx context.Context) (*DatasetRehydrator, error) {
-	dataset, err := datasetFromEnv()
-	if err != nil {
-		return nil, err
-	}
-	user, err := userFromEnv()
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := awsConfigFactory.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRehydrator {
 	return &DatasetRehydrator{
-		dataset:         dataset,
-		user:            user,
-		pennsieveClient: pennsieve.NewClient(pennsieve.APIParams{ApiHost: utils.GetApiHost(os.Getenv(models.ECSTaskEnvKey))}),
-		awsConfig:       *cfg,
-		logger: logging.Default.With(
-			slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionId", dataset.VersionID)),
-			slog.Group("user", slog.String("name", user.Name), slog.String("email", user.Email))),
-	}, nil
+		dataset:         config.Env.Dataset,
+		user:            config.Env.User,
+		pennsieveClient: config.PennsieveClient(),
+		processor:       config.ObjectProcessor(thresholdSize),
+		awsConfig:       config.AWSConfig,
+		logger:          config.Logger,
+	}
 }
 
 func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult, error) {
@@ -65,8 +50,6 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		return nil, fmt.Errorf("error retrieving dataset metadata by version: %w", err)
 	}
 
-	processor := NewRehydrator(s3.NewFromConfig(dr.awsConfig), ThresholdSize, dr.logger)
-
 	numberOfRehydrations := len(datasetMetadataByVersionResponse.Files)
 	rehydrations := make(chan *Rehydration, numberOfRehydrations)
 	results := make(chan FileRehydrationResult, numberOfRehydrations)
@@ -75,7 +58,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(ctx, i, rehydrations, results, processor)
+		go worker(ctx, i, rehydrations, results, dr.processor)
 	}
 
 	// create work
@@ -120,7 +103,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 }
 
 // processes rehydrations
-func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- FileRehydrationResult, processor ObjectProcessor) {
+func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- FileRehydrationResult, processor objects.Processor) {
 	for r := range rehydrations {
 		result := FileRehydrationResult{
 			Worker:      w,
@@ -150,40 +133,4 @@ func (wr *FileRehydrationResult) LogGroups() []any {
 		return wr.Rehydration.LogGroups(slog.Any("error", wr.Error))
 	}
 	return wr.Rehydration.LogGroups()
-}
-
-func datasetFromEnv() (*models.Dataset, error) {
-	datasetIdString := os.Getenv(models.ECSTaskDatasetIDKey)
-	datasetId, err := strconv.Atoi(datasetIdString)
-	if err != nil {
-		return nil, fmt.Errorf("error converting env var %s value [%s] to int: %w",
-			models.ECSTaskDatasetIDKey, datasetIdString, err)
-	}
-	datasetVersionIdString := os.Getenv(models.ECSTaskDatasetVersionIDKey)
-	versionId, err := strconv.Atoi(datasetVersionIdString)
-	if err != nil {
-		return nil, fmt.Errorf("error converting env var %s value [%s] to int: %w",
-			models.ECSTaskDatasetVersionIDKey, datasetVersionIdString, err)
-	}
-	return &models.Dataset{
-		ID:        datasetId,
-		VersionID: versionId,
-	}, nil
-}
-
-func userFromEnv() (*models.User, error) {
-	userName := os.Getenv(models.ECSTaskUserNameKey)
-	if len(userName) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			models.ECSTaskUserNameKey)
-	}
-	userEmail := os.Getenv(models.ECSTaskUserEmailKey)
-	if len(userEmail) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			models.ECSTaskUserEmailKey)
-	}
-	return &models.User{
-		Name:  userName,
-		Email: userEmail,
-	}, nil
 }

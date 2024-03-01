@@ -1,4 +1,4 @@
-package main
+package objects
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type Rehydrator struct {
 	logger        *slog.Logger
 }
 
-func NewRehydrator(s3 *s3.Client, thresholdSize int64, logger *slog.Logger) ObjectProcessor {
+func NewRehydrator(s3 *s3.Client, thresholdSize int64, logger *slog.Logger) Processor {
 	return &Rehydrator{s3, thresholdSize, logger}
 }
 

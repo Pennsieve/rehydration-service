@@ -125,7 +125,7 @@ func (h *Handler) handleForStatus(record *idempotency.Record) (*Response, error)
 
 func (h *Handler) startRehydrationTask(ctx context.Context) (*Response, error) {
 	recordID := idempotency.RecordID(h.request.Dataset.ID, h.request.Dataset.VersionID)
-	taskARN, err := h.ecsHandler.Handle(ctx, h.request.Dataset, h.request.Logger)
+	taskARN, err := h.ecsHandler.Handle(ctx, h.request.Dataset, h.request.User, h.request.Logger)
 	if err != nil {
 		deleteErr := h.store.DeleteRecord(ctx, recordID)
 		if deleteErr != nil {

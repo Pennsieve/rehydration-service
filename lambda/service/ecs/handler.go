@@ -8,12 +8,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/runner"
+	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"log/slog"
 	"strings"
 )
 
 type Handler interface {
-	Handle(ctx context.Context, dataset models.Dataset, logger *slog.Logger) (string, error)
+	Handle(ctx context.Context, dataset sharedmodels.Dataset, user sharedmodels.User, logger *slog.Logger) (string, error)
 }
 type handler struct {
 	taskConfig *models.ECSTaskConfig
@@ -28,10 +29,10 @@ func NewHandler(awsConfig aws.Config, taskConfig *models.ECSTaskConfig) Handler 
 	}
 }
 
-func (h *handler) Handle(ctx context.Context, dataset models.Dataset, logger *slog.Logger) (string, error) {
+func (h *handler) Handle(ctx context.Context, dataset sharedmodels.Dataset, user sharedmodels.User, logger *slog.Logger) (string, error) {
 	logger.Info("Initiating new Rehydrate Fargate Task.")
 
-	runTaskIn := h.taskConfig.RunTaskInput(dataset)
+	runTaskIn := h.taskConfig.RunTaskInput(dataset, user)
 
 	runner := runner.NewECSTaskRunner(h.client, runTaskIn)
 	out, err := runner.Run(ctx)

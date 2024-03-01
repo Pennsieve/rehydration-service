@@ -1,6 +1,8 @@
 package models
 
+import "github.com/pennsieve/rehydration-service/shared/models"
+
 type Request struct {
-	Dataset
-	User
+	models.Dataset
+	models.User
 }

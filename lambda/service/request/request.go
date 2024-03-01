@@ -7,12 +7,13 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/shared/logging"
+	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"log/slog"
 )
 
 type RehydrationRequest struct {
-	Dataset             models.Dataset
-	User                models.User
+	Dataset             sharedmodels.Dataset
+	User                sharedmodels.User
 	Logger              *slog.Logger
 	lambdaRequest       events.APIGatewayV2HTTPRequest
 	lambdaLogStreamName string
@@ -57,7 +58,7 @@ func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest) (*Rehyd
 	dataset, user := request.Dataset, request.User
 
 	requestLogger := logging.Default.With(slog.String("requestID", awsRequestID),
-		slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionID", dataset.VersionID)),
+		slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionId", dataset.VersionID)),
 		slog.Group("user", slog.String("name", user.Name), slog.String("email", user.Email)))
 
 	return &RehydrationRequest{

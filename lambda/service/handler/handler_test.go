@@ -8,9 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/handler"
-	idempotency2 "github.com/pennsieve/rehydration-service/service/idempotency"
+	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
-	"github.com/pennsieve/rehydration-service/shared/idempotency"
+	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
+	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,8 +33,8 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	request := models.Request{
-		Dataset: models.Dataset{ID: 5065, VersionID: 2},
-		User:    models.User{Name: "First Last", Email: "last@example.com"},
+		Dataset: sharedmodels.Dataset{ID: 5065, VersionID: 2},
+		User:    sharedmodels.User{Name: "First Last", Email: "last@example.com"},
 	}
 	expectedTaskARN := "arn:aws:ecs:test-task-arn"
 
@@ -51,10 +52,10 @@ func TestRehydrationServiceHandler(t *testing.T) {
 
 	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
-	record, err := idempotency.FromItem(scanned[0])
+	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
-	assert.Equal(t, idempotency.RecordID(request.ID, request.VersionID), record.ID)
-	assert.Equal(t, idempotency.InProgress, record.Status)
+	assert.Equal(t, sharedidempotency.RecordID(request.ID, request.VersionID), record.ID)
+	assert.Equal(t, sharedidempotency.InProgress, record.Status)
 	assert.Empty(t, record.RehydrationLocation)
 	assert.Equal(t, expectedTaskARN, record.FargateTaskARN)
 }
@@ -62,17 +63,17 @@ func TestRehydrationServiceHandler(t *testing.T) {
 func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
-	dataset := models.Dataset{ID: 5065, VersionID: 2}
-	inProgress := idempotency.Record{
-		ID:                  idempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", idempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              idempotency.InProgress,
+	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	inProgress := sharedidempotency.Record{
+		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
+		Status:              sharedidempotency.InProgress,
 		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
 	}
 	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(inProgress).build()
 	defer fixture.teardown()
 
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
@@ -82,7 +83,7 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 	expectedStatusCode := 500
 	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
 	require.Error(t, err)
-	var inProgressError idempotency2.InProgressError
+	var inProgressError idempotency.InProgressError
 	require.ErrorAs(t, err, &inProgressError)
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
@@ -90,7 +91,7 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
-	record, err := idempotency.FromItem(scanned[0])
+	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, inProgress, *record)
 }
@@ -98,17 +99,17 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
-	dataset := models.Dataset{ID: 5065, VersionID: 2}
-	expired := idempotency.Record{
-		ID:                  idempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", idempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              idempotency.Expired,
+	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	expired := sharedidempotency.Record{
+		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
+		Status:              sharedidempotency.Expired,
 		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
 	}
 	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(expired).build()
 	defer fixture.teardown()
 
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
@@ -118,7 +119,7 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	expectedStatusCode := 500
 	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
 	require.Error(t, err)
-	var expiredError idempotency2.ExpiredError
+	var expiredError idempotency.ExpiredError
 	require.ErrorAs(t, err, &expiredError)
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
@@ -126,7 +127,7 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
-	record, err := idempotency.FromItem(scanned[0])
+	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, expired, *record)
 }
@@ -134,17 +135,17 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
-	dataset := models.Dataset{ID: 5065, VersionID: 2}
-	completed := idempotency.Record{
-		ID:                  idempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", idempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              idempotency.Completed,
+	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	completed := sharedidempotency.Record{
+		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
+		Status:              sharedidempotency.Completed,
 		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
 	}
 	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(completed).build()
 	defer fixture.teardown()
 
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
@@ -160,7 +161,7 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
-	record, err := idempotency.FromItem(scanned[0])
+	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, completed, *record)
 }
@@ -173,8 +174,8 @@ func TestRehydrationServiceHandler_ECSError(t *testing.T) {
 	fixture := NewFixtureBuilder(t).withECSError(expectedStatusCode, errorBody).withIdempotencyTable().build()
 	defer fixture.teardown()
 
-	dataset := models.Dataset{ID: 5065, VersionID: 2}
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
@@ -203,10 +204,10 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 		"empty body":               {"", "unmarshall"},
 		"non-json body":            {"not a json body", "unmarshall"},
 		"wrong format":             {`{"some": "other", "wrong": "format"}`, "missing"},
-		"missing datasetId":        {requestToBody(t, models.Request{Dataset: models.Dataset{VersionID: 3}, User: models.User{Name: "First Last", Email: "last@example.com"}}), "datasetId"},
-		"missing datasetVersionId": {requestToBody(t, models.Request{Dataset: models.Dataset{ID: 3879}, User: models.User{Name: "First Last", Email: "last@example.com"}}), "datasetVersionId"},
-		"empty name":               {requestToBody(t, models.Request{Dataset: models.Dataset{ID: 3879, VersionID: 4}, User: models.User{Email: "last@example.com"}}), "name"},
-		"empty email":              {requestToBody(t, models.Request{Dataset: models.Dataset{ID: 3879, VersionID: 4}, User: models.User{Name: "First Last"}}), "email"},
+		"missing datasetId":        {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{VersionID: 3}, User: sharedmodels.User{Name: "First Last", Email: "last@example.com"}}), "datasetId"},
+		"missing datasetVersionId": {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879}, User: sharedmodels.User{Name: "First Last", Email: "last@example.com"}}), "datasetVersionId"},
+		"empty name":               {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879, VersionID: 4}, User: sharedmodels.User{Email: "last@example.com"}}), "name"},
+		"empty email":              {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879, VersionID: 4}, User: sharedmodels.User{Name: "First Last"}}), "email"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -319,17 +320,19 @@ func (b *FixtureBuilder) withECSRequestAssertionFunc(rehydrationReq models.Reque
 }
 
 func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Request) map[string]any {
-	envValue, ok := os.LookupEnv("ENV")
-	require.True(t, ok, "env variable ENV is not set")
+	envValue, ok := os.LookupEnv(sharedmodels.ECSTaskEnvKey)
+	require.Truef(t, ok, "env variable %s is not set", sharedmodels.ECSTaskEnvKey)
 	idempotencyTableValue, ok := os.LookupEnv("FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME")
 	require.True(t, ok, "env variable FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME is not set")
 	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
 	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
 	return map[string]any{
 		"environment": []any{
-			map[string]any{"name": "ENV", "value": envValue},
-			map[string]any{"name": "DATASET_ID", "value": strconv.Itoa(rehydrationReq.Dataset.ID)},
-			map[string]any{"name": "DATASET_VERSION_ID", "value": strconv.Itoa(rehydrationReq.Dataset.VersionID)},
+			map[string]any{"name": sharedmodels.ECSTaskEnvKey, "value": envValue},
+			map[string]any{"name": sharedmodels.ECSTaskDatasetIDKey, "value": strconv.Itoa(rehydrationReq.Dataset.ID)},
+			map[string]any{"name": sharedmodels.ECSTaskDatasetVersionIDKey, "value": strconv.Itoa(rehydrationReq.Dataset.VersionID)},
+			map[string]any{"name": sharedmodels.ECSTaskUserNameKey, "value": rehydrationReq.User.Name},
+			map[string]any{"name": sharedmodels.ECSTaskUserEmailKey, "value": rehydrationReq.User.Email},
 			map[string]any{"name": "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME", "value": idempotencyTableValue}},
 		"name": containerNameValue}
 }
@@ -341,16 +344,16 @@ func assertECSContainerOverridesEqual(t require.TestingT, expected map[string]an
 }
 
 func (b *FixtureBuilder) withIdempotencyTable() *FixtureBuilder {
-	table, ok := os.LookupEnv(idempotency.TableNameKey)
+	table, ok := os.LookupEnv(sharedidempotency.TableNameKey)
 	if !ok || len(table) == 0 {
-		assert.FailNow(b.testingT, "idempotency table name missing from environment variables or empty", "env var name: %s", idempotency.KeyAttrName)
+		assert.FailNow(b.testingT, "idempotency table name missing from environment variables or empty", "env var name: %s", sharedidempotency.KeyAttrName)
 	}
 	b.idempotencyTableName = table
-	b.createTableInputs = append(b.createTableInputs, test.IdempotencyCreateTableInput(table, idempotency.KeyAttrName))
+	b.createTableInputs = append(b.createTableInputs, test.IdempotencyCreateTableInput(table, sharedidempotency.KeyAttrName))
 	return b
 }
 
-func (b *FixtureBuilder) withIdempotencyRecords(records ...idempotency.Record) *FixtureBuilder {
+func (b *FixtureBuilder) withIdempotencyRecords(records ...sharedidempotency.Record) *FixtureBuilder {
 	if len(b.idempotencyTableName) == 0 {
 		assert.FailNow(b.testingT, "idempotencyTableName is empty; call withIdempotencyTable before calling this method")
 	}

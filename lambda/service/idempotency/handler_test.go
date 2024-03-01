@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
+	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"log/slog"
@@ -15,14 +15,14 @@ import (
 )
 
 type handlerTest struct {
-	dataset models.Dataset
-	user    models.User
+	dataset sharedmodels.Dataset
+	user    sharedmodels.User
 	store   *MockStore
 	ecs     *MockECSHandler
 	handler Handler
 }
 
-func newHandlerTest(dataset models.Dataset, user models.User) *handlerTest {
+func newHandlerTest(dataset sharedmodels.Dataset, user sharedmodels.User) *handlerTest {
 	store := new(MockStore)
 	ecs := new(MockECSHandler)
 	handler := Handler{
@@ -49,13 +49,13 @@ func (h *handlerTest) assertMockAssertions(t *testing.T) {
 }
 
 func TestHandler_Handle(t *testing.T) {
-	dataset := models.Dataset{ID: 4321, VersionID: 3}
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	dataset := sharedmodels.Dataset{ID: 4321, VersionID: 3}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	test := newHandlerTest(dataset, user)
 
 	expectedTaskARN := "arn:aws:ecs:test:test:test"
 	test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
-	test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
+	test.ecs.OnHandleReturn(dataset, user, expectedTaskARN).Once()
 	test.store.OnSetTaskARNSucceed(idempotency.RecordID(dataset.ID, dataset.VersionID), expectedTaskARN).Once()
 
 	resp, err := test.handler.Handle(context.Background())
@@ -67,8 +67,8 @@ func TestHandler_Handle(t *testing.T) {
 }
 
 func TestHandler_Handle_NoRetry(t *testing.T) {
-	dataset := models.Dataset{ID: 4321, VersionID: 3}
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	dataset := sharedmodels.Dataset{ID: 4321, VersionID: 3}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	test := newHandlerTest(dataset, user)
 
 	expectedError := errors.New("unexpected error")
@@ -81,8 +81,8 @@ func TestHandler_Handle_NoRetry(t *testing.T) {
 }
 
 func TestHandler_Handle_RetryOnce(t *testing.T) {
-	dataset := models.Dataset{ID: 4321, VersionID: 3}
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	dataset := sharedmodels.Dataset{ID: 4321, VersionID: 3}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	test := newHandlerTest(dataset, user)
 
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
@@ -100,7 +100,7 @@ func TestHandler_Handle_RetryOnce(t *testing.T) {
 	// On the retry SaveInProgress now returns success to indicate that a new record was created
 	test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
 
-	test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
+	test.ecs.OnHandleReturn(dataset, user, expectedTaskARN).Once()
 
 	test.store.OnSetTaskARNSucceed(recordID, expectedTaskARN).Once()
 
@@ -112,8 +112,8 @@ func TestHandler_Handle_RetryOnce(t *testing.T) {
 }
 
 func TestHandler_Handle_RetryMultiple(t *testing.T) {
-	dataset := models.Dataset{ID: 4321, VersionID: 3}
-	user := models.User{Name: "First Last", Email: "last@example.com"}
+	dataset := sharedmodels.Dataset{ID: 4321, VersionID: 3}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	recordID := idempotency.RecordID(dataset.ID, dataset.VersionID)
 
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
@@ -142,7 +142,7 @@ func TestHandler_Handle_RetryMultiple(t *testing.T) {
 			} else {
 				test.store.OnSaveInProgressSucceed(dataset.ID, dataset.VersionID).Once()
 
-				test.ecs.OnHandleReturn(dataset, expectedTaskARN).Once()
+				test.ecs.OnHandleReturn(dataset, user, expectedTaskARN).Once()
 
 				test.store.OnSetTaskARNSucceed(recordID, expectedTaskARN).Once()
 				resp, err := test.handler.Handle(context.Background())
@@ -241,15 +241,15 @@ type MockECSHandler struct {
 	mock.Mock
 }
 
-func (m *MockECSHandler) Handle(ctx context.Context, dataset models.Dataset, logger *slog.Logger) (string, error) {
-	args := m.Called(ctx, dataset, logger)
+func (m *MockECSHandler) Handle(ctx context.Context, dataset sharedmodels.Dataset, user sharedmodels.User, logger *slog.Logger) (string, error) {
+	args := m.Called(ctx, dataset, user, logger)
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockECSHandler) OnHandleReturn(dataset models.Dataset, ret string) *mock.Call {
-	return m.On("Handle", mock.Anything, dataset, mock.Anything).Return(ret, nil)
+func (m *MockECSHandler) OnHandleReturn(dataset sharedmodels.Dataset, user sharedmodels.User, ret string) *mock.Call {
+	return m.On("Handle", mock.Anything, dataset, user, mock.Anything).Return(ret, nil)
 }
 
-func (m *MockECSHandler) OnHandleError(dataset models.Dataset, err error) *mock.Call {
-	return m.On("Handle", mock.Anything, dataset, mock.Anything).Return("", err)
+func (m *MockECSHandler) OnHandleError(dataset sharedmodels.Dataset, user sharedmodels.User, err error) *mock.Call {
+	return m.On("Handle", mock.Anything, dataset, user, mock.Anything).Return("", err)
 }

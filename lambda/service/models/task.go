@@ -6,14 +6,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
+	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"os"
 	"strconv"
 	"strings"
 )
-
-const ecsTaskDatasetIDKey = "DATASET_ID"
-const ecsTaskDatasetVersionIDKey = "DATASET_VERSION_ID"
-const ecsTaskEnvKey = "ENV"
 
 type ECSTaskConfig struct {
 	TaskDefinitionARN    string
@@ -47,11 +44,11 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	envValue, err := nonEmptyFromEnvVar("ENV")
+	envValue, err := nonEmptyFromEnvVar(sharedmodels.ECSTaskEnvKey)
 	if err != nil {
 		return nil, err
 	}
-	idepotencyTable, err := nonEmptyFromEnvVar(idempotency.TableNameKey)
+	idempotencyTable, err := nonEmptyFromEnvVar(idempotency.TableNameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +60,7 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		SecurityGroup:        securityGroup,
 		TaskDefContainerName: taskDefContainerName,
 		Environment:          envValue,
-		IdempotencyTableName: idepotencyTable,
+		IdempotencyTableName: idempotencyTable,
 	}, nil
 }
 
@@ -77,7 +74,7 @@ func nonEmptyFromEnvVar(key string) (string, error) {
 	}
 }
 
-func (t *ECSTaskConfig) RunTaskInput(dataset Dataset) *ecs.RunTaskInput {
+func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmodels.User) *ecs.RunTaskInput {
 	datasetID := strconv.Itoa(dataset.ID)
 	datasetVersionID := strconv.Itoa(dataset.VersionID)
 	return &ecs.RunTaskInput{
@@ -96,15 +93,23 @@ func (t *ECSTaskConfig) RunTaskInput(dataset Dataset) *ecs.RunTaskInput {
 					Name: aws.String(t.TaskDefContainerName),
 					Environment: []types.KeyValuePair{
 						{
-							Name:  aws.String(ecsTaskDatasetIDKey),
+							Name:  aws.String(sharedmodels.ECSTaskDatasetIDKey),
 							Value: aws.String(datasetID),
 						},
 						{
-							Name:  aws.String(ecsTaskDatasetVersionIDKey),
+							Name:  aws.String(sharedmodels.ECSTaskDatasetVersionIDKey),
 							Value: aws.String(datasetVersionID),
 						},
 						{
-							Name:  aws.String(ecsTaskEnvKey),
+							Name:  aws.String(sharedmodels.ECSTaskUserNameKey),
+							Value: aws.String(user.Name),
+						},
+						{
+							Name:  aws.String(sharedmodels.ECSTaskUserEmailKey),
+							Value: aws.String(user.Email),
+						},
+						{
+							Name:  aws.String(sharedmodels.ECSTaskEnvKey),
 							Value: aws.String(t.Environment),
 						},
 						{

@@ -17,25 +17,16 @@ var awsConfigFactory = awsconfig.NewFactory()
 
 func main() {
 	ctx := context.Background()
-	awsConfig, err := awsConfigFactory.Get(ctx)
+	taskConfig, err := initConfig(ctx)
 	if err != nil {
-		logging.Default.Error("error getting AWS config: %v", err)
+		logging.Default.Error("error initializing config", err)
 		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
-	configEnv, err := config.LookupEnv()
+	rehydrator, idempotencyStore, err := taskHandlerDependencies(taskConfig)
 	if err != nil {
-		logging.Default.Error("error getting taskConfig environment variables: %v", err)
-		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
-		os.Exit(1)
-	}
-	taskConfig := config.NewConfig(*awsConfig, configEnv)
-
-	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
-	idempotencyStore, err := taskConfig.IdempotencyStore()
-	if err != nil {
-		rehydrator.logger.Error("error creating idempotencyStore: %v", err)
-		rehydrator.logger.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
+		taskConfig.Logger.Error("error creating task dependencies: %v", err)
+		taskConfig.Logger.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
 
@@ -77,4 +68,26 @@ func RehydrationTaskHandler(ctx context.Context, rehydrator *DatasetRehydrator, 
 	}
 	//TODO update per-user DynamoDB with success
 	return nil
+}
+
+func initConfig(ctx context.Context) (*config.Config, error) {
+	awsConfig, err := awsConfigFactory.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting AWS config: %w", err)
+	}
+	configEnv, err := config.LookupEnv()
+	if err != nil {
+		return nil, fmt.Errorf("error getting taskConfig environment variables: %w", err)
+	}
+	taskConfig := config.NewConfig(*awsConfig, configEnv)
+	return taskConfig, nil
+}
+
+func taskHandlerDependencies(taskConfig *config.Config) (*DatasetRehydrator, idempotency.Store, error) {
+	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
+	idempotencyStore, err := taskConfig.IdempotencyStore()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating idempotencyStore: %w", err)
+	}
+	return rehydrator, idempotencyStore, nil
 }

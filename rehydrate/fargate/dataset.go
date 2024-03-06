@@ -75,15 +75,15 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		rehydrations <- NewRehydration(
 			SourceObject{
 				DatasetUri: datasetFileByVersionResponse.Uri,
-				Size:       j.Size,
-				Name:       j.Name,
+				Size:       datasetFileByVersionResponse.Size,
+				Name:       datasetFileByVersionResponse.Name,
 				VersionId:  datasetFileByVersionResponse.S3VersionID,
-				Path:       j.Path},
+				Path:       datasetFileByVersionResponse.Path},
 			DestinationObject{
 				Bucket: destinationBucket,
 				Key: utils.CreateDestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
-					j.Path),
+					datasetFileByVersionResponse.Path),
 			})
 	}
 	close(rehydrations)

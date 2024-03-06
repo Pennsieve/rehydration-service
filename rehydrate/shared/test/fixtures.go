@@ -6,7 +6,7 @@ import (
 )
 
 type Fixture struct {
-	T *testing.T
+	T *testing.T // this should really be a require.TestingT from testify to make this and the types that include it themselves testable
 }
 
 func waitForEverything[T any](inputs []T, waitFn func(T) error) error {

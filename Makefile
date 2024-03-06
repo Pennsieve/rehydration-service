@@ -29,7 +29,7 @@ tidy:
 # Start the local versions of docker services
 local-services: docker-clean
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
-	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local
+	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local minio-local
 
 # Run tests locally
 test: local-services

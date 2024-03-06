@@ -21,7 +21,7 @@ func main() {
 	// that the task shows up as failed in the hope that this will surface errors quickly. In the
 	// AWS console, datadog, notifications, etc.
 	//
-	// All of the logic is in RehydrationTaskHandler. Everything proceeding that should just be setup.
+	// All the logic is in RehydrationTaskHandler. Everything proceeding that should just be setup.
 	ctx := context.Background()
 	taskConfig, err := initConfig(ctx)
 	if err != nil {

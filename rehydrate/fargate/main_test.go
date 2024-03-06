@@ -23,19 +23,27 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().WithMinIO().Config(ctx, false)
 	idempotencyTable := "main-test-idempotency-table"
 	publishBucket := "discover-bucket"
-	dataset := &models.Dataset{
-		ID:        1234,
-		VersionID: 3,
-	}
-	user := &models.User{
-		Name:  "First Last",
-		Email: "last@example.com",
+	taskEnv := newTestConfigEnv(idempotencyTable)
+	dataset := taskEnv.Dataset
+
+	var datasetFiles []TestDatasetFile
+	for i := 1; i <= 50; i++ {
+		name := fmt.Sprintf("file%d.txt", i)
+		path := fmt.Sprintf("files/dir%d/%s", i, name)
+		content := fmt.Sprintf("content of %s\n", name)
+		datasetFiles = append(datasetFiles, TestDatasetFile{
+			DatasetFile: discover.DatasetFile{
+				Name:     name,
+				Path:     path,
+				FileType: "TEXT",
+				Size:     int64(len([]byte(content))),
+			},
+			content: content,
+			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
+		})
 	}
 
-	datasetFiles := []discover.DatasetFile{
-		{Name: "file1.txt", Path: "files/dir1/file1.txt", FileType: "Text"},
-		{Name: "file2.txt", Path: "files/dir2/file2.txt", FileType: "Text"},
-	}
+	testDatasetFiles := NewTestDatasetFiles(datasetFiles)
 
 	for testName, testParams := range map[string]struct {
 		thresholdSize int64
@@ -45,33 +53,12 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	} {
 
 		// Set up S3 for the tests
-		datasetFilesByPath := map[string]*discover.DatasetFile{}
-		datasetFilesByKey := map[string]*discover.DatasetFile{}
-		var putObjectInputs []*s3.PutObjectInput
-		for i := range datasetFiles {
-			f := &datasetFiles[i]
-			body := fmt.Sprintf("content of %s\n", f.Name)
-			size := int64(len([]byte(body)))
-			key := fmt.Sprintf("%d/%s", dataset.ID, f.Path)
-			putObjectInputs = append(putObjectInputs, &s3.PutObjectInput{
-				Bucket:        aws.String(publishBucket),
-				Key:           aws.String(key),
-				Body:          strings.NewReader(body),
-				ContentLength: aws.Int64(size),
-			})
-			f.Size = size
-			datasetFilesByPath[f.Path] = f
-			datasetFilesByKey[key] = f
-		}
-
 		s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig), &s3.CreateBucketInput{
 			Bucket: aws.String(publishBucket),
-		}).WithVersioning(publishBucket).WithObjects(putObjectInputs...)
+		}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
 
 		for location, putOutput := range putObjectOutputs {
-			datasetFile, ok := datasetFilesByKey[location.Key]
-			require.Truef(t, ok, "missing DatasetFile: bucket: %s, key: %s", location.Bucket, location.Key)
-			datasetFile.S3VersionID = aws.ToString(putOutput.VersionId)
+			testDatasetFiles.SetS3VersionId(t, location, aws.ToString(putOutput.VersionId))
 		}
 
 		// Setup DynamoDB for tests
@@ -86,18 +73,12 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		// Create a mock Discover API server
 		mockDiscover := test.NewDiscoverServerFixture(t, nil)
 		addDatasetByVersionHandler(mockDiscover, dataset, publishBucket)
-		addDatasetMetadataByVersionHandler(mockDiscover, dataset, datasetFiles)
-		addDatasetFileByVersionHandler(mockDiscover, dataset, publishBucket, datasetFilesByPath)
+		addDatasetMetadataByVersionHandler(mockDiscover, dataset, testDatasetFiles.DatasetFiles())
+		addDatasetFileByVersionHandler(mockDiscover, dataset, publishBucket, testDatasetFiles.ByPath)
 
 		t.Run(testName, func(t *testing.T) {
-			env := &config.Env{
-				Dataset:          dataset,
-				User:             user,
-				TaskEnv:          "TEST",
-				PennsieveHost:    mockDiscover.Server.URL,
-				IdempotencyTable: idempotencyTable,
-			}
-			taskConfig := config.NewConfig(awsConfig, env)
+			taskEnv.PennsieveHost = mockDiscover.Server.URL
+			taskConfig := config.NewConfig(awsConfig, taskEnv)
 			rehydrator := NewDatasetRehydrator(taskConfig, testParams.thresholdSize)
 			idempotencyStore, err := taskConfig.IdempotencyStore()
 			require.NoError(t, err)
@@ -123,7 +104,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	}
 }
 
-// this is written to Go 1.21 where http.ServeMux patterns do not yet have wildcards. So this function can be made more
+// this is written to Go 1.21 where http.ServeMux patterns do not yet have methods or wildcards. So this function can be made more
 // general when we switch to 1.22
 func addDatasetByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedBucket string) {
 	pattern := fmt.Sprintf("/discover/datasets/%d/versions/%d", dataset.ID, dataset.VersionID)
@@ -147,7 +128,7 @@ func addDatasetMetadataByVersionHandler(mockDiscover *test.DiscoverServerFixture
 	mockDiscover.ModelHandlerFunc(http.MethodGet, pattern, respModel)
 }
 
-func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*discover.DatasetFile) {
+func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) {
 	pattern := fmt.Sprintf("/discover/datasets/%d/versions/%d/files", dataset.ID, dataset.VersionID)
 
 	mockDiscover.MultiModelHandlerFunction(http.MethodGet, pattern, func(r *http.Request) any {
@@ -166,4 +147,76 @@ func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, da
 		}
 		return responseModel
 	})
+}
+
+func newTestConfigEnv(idempotencyTable string) *config.Env {
+	dataset := &models.Dataset{
+		ID:        1234,
+		VersionID: 3,
+	}
+	user := &models.User{
+		Name:  "First Last",
+		Email: "last@example.com",
+	}
+
+	return &config.Env{
+		Dataset:          dataset,
+		User:             user,
+		TaskEnv:          "TEST",
+		IdempotencyTable: idempotencyTable,
+	}
+}
+
+type TestDatasetFile struct {
+	discover.DatasetFile
+	content string
+	s3key   string
+}
+
+type TestDatasetFiles struct {
+	Files  []TestDatasetFile
+	ByPath map[string]*TestDatasetFile
+	ByKey  map[string]*TestDatasetFile
+}
+
+func NewTestDatasetFiles(files []TestDatasetFile) *TestDatasetFiles {
+	datasetFilesByPath := map[string]*TestDatasetFile{}
+	datasetFilesByKey := map[string]*TestDatasetFile{}
+	for i := range files {
+		f := &files[i]
+		datasetFilesByPath[f.Path] = f
+		datasetFilesByKey[f.s3key] = f
+	}
+	return &TestDatasetFiles{
+		Files:  files,
+		ByPath: datasetFilesByPath,
+		ByKey:  datasetFilesByKey,
+	}
+}
+
+func (f *TestDatasetFiles) SetS3VersionId(t *testing.T, s3Location test.S3Location, s3VersionId string) {
+	datasetFile, ok := f.ByKey[s3Location.Key]
+	require.Truef(t, ok, "missing DatasetFile: bucket: %s, key: %s", s3Location.Bucket, s3Location.Key)
+	datasetFile.S3VersionID = s3VersionId
+}
+
+func (f *TestDatasetFiles) PutObjectInputs(bucket string) []*s3.PutObjectInput {
+	var putObjectInputs []*s3.PutObjectInput
+	for _, file := range f.Files {
+		putObjectInputs = append(putObjectInputs, &s3.PutObjectInput{
+			Bucket:        aws.String(bucket),
+			Key:           aws.String(file.s3key),
+			Body:          strings.NewReader(file.content),
+			ContentLength: aws.Int64(file.Size),
+		})
+	}
+	return putObjectInputs
+}
+
+func (f *TestDatasetFiles) DatasetFiles() []discover.DatasetFile {
+	var datasetFiles []discover.DatasetFile
+	for _, file := range f.Files {
+		datasetFiles = append(datasetFiles, file.DatasetFile)
+	}
+	return datasetFiles
 }

@@ -31,14 +31,11 @@ type DiscoverServerFixture struct {
 // Written for Go 1.21, so before methods and wildcards were part of http.ServeMux patterns.
 func NewDiscoverServerFixture(t require.TestingT, cognitoConfig *authentication.CognitoConfig) *DiscoverServerFixture {
 	fixture := NewHTTPMuxTestFixture(t)
-	fixture.Mux.HandleFunc("/authentication/cognito-config", func(writer http.ResponseWriter, request *http.Request) {
-		require.Equal(t, http.MethodGet, request.Method)
-		model := cognitoConfig
-		if model == nil {
-			model = &defaultCognitoConfig
-		}
-		fixture.WriteResponseModel(writer, model)
-	})
+	ccModel := cognitoConfig
+	if ccModel == nil {
+		ccModel = &defaultCognitoConfig
+	}
+	fixture.ModelHandlerFunc(http.MethodGet, "/authentication/cognito-config", ccModel)
 	return &DiscoverServerFixture{T: t, HTTPMuxTestFixture: fixture}
 }
 

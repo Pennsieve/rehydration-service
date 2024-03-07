@@ -54,9 +54,9 @@ func TestRehydrationTaskHandler(t *testing.T) {
 
 		// Create a mock Discover API server
 		mockDiscover := test.NewDiscoverServerFixture(t, nil)
-		addDatasetByVersionHandler(mockDiscover, dataset, publishBucket)
-		addDatasetMetadataByVersionHandler(mockDiscover, dataset, testDatasetFiles.DatasetFiles())
-		addDatasetFileByVersionHandler(mockDiscover, dataset, publishBucket, testDatasetFiles.ByPath)
+		addDatasetByVersionHandler(mockDiscover, *dataset, publishBucket)
+		addDatasetMetadataByVersionHandler(mockDiscover, *dataset, testDatasetFiles.DatasetFiles())
+		addDatasetFileByVersionHandler(mockDiscover, *dataset, publishBucket, testDatasetFiles.ByPath)
 
 		t.Run(testName, func(t *testing.T) {
 			taskEnv.PennsieveHost = mockDiscover.Server.URL
@@ -108,12 +108,13 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	defer mockDiscover.Teardown()
 
 	taskEnv.PennsieveHost = mockDiscover.Server.URL
-	addDatasetByVersionHandler(mockDiscover, dataset, publishBucket)
-	addDatasetMetadataByVersionHandler(mockDiscover, dataset, testDatasetFiles.DatasetFiles())
-	addDatasetFileByVersionHandler(mockDiscover, dataset, publishBucket, testDatasetFiles.ByPath)
+	addDatasetByVersionHandler(mockDiscover, *dataset, publishBucket)
+	addDatasetMetadataByVersionHandler(mockDiscover,
+		*dataset, testDatasetFiles.DatasetFiles())
+	addDatasetFileByVersionHandler(mockDiscover, *dataset, publishBucket, testDatasetFiles.ByPath)
 
 	taskConfig := config.NewConfig(awsConfig, taskEnv)
-	taskConfig.SetObjectProcessor(NewMockObjectProcessor([]string{copyFailPath}))
+	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(copyFailPath))
 
 	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
 	idempotencyStore, err := taskConfig.IdempotencyStore()
@@ -128,38 +129,124 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	require.Len(t, idempotencyItems, 0)
 }
 
-// this is written to Go 1.21 where http.ServeMux patterns do not yet have methods or wildcards. So this function can be made more
-// general when we switch to 1.22
-func addDatasetByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedBucket string) {
-	pattern := fmt.Sprintf("/discover/datasets/%d/versions/%d", dataset.ID, dataset.VersionID)
+func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	idempotencyTable := "main-test-idempotency-table"
+	publishBucket := "discover-bucket"
+	taskEnv := newTestConfigEnv(idempotencyTable)
+	dataset := taskEnv.Dataset
+	initialIdempotencyRecord := newInProgressRecord(*dataset)
+
+	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+
+	for testName, testParams := range map[string]struct {
+		discoverBuilders []*test.HandlerFuncBuilder
+	}{
+		"get dataset error": {discoverBuilders: []*test.HandlerFuncBuilder{
+			errorDiscoverDatasetByVersionHandlerBuilder(*dataset, "dataset not found", http.StatusNotFound)},
+		},
+		"get dataset metadata error": {discoverBuilders: []*test.HandlerFuncBuilder{
+			discoverDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+			errorDiscoverDatasetMetadataByVersionHandlerBuilder(*dataset, "internal service error", http.StatusInternalServerError)},
+		},
+		"get dataset file error": {discoverBuilders: []*test.HandlerFuncBuilder{
+			discoverDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+			discoverDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
+			errorDiscoverDatasetFileByVersionHandlerBuilder(*dataset, "file not found", http.StatusNotFound),
+		}},
+	} {
+
+		t.Run(testName, func(t *testing.T) {
+			// Setup DynamoDB for tests
+			dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
+				test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+			defer dyDB.Teardown()
+
+			// Create a mock Discover API server
+			mockDiscover := test.NewDiscoverServerFixture(t, nil)
+			defer mockDiscover.Teardown()
+			for _, b := range testParams.discoverBuilders {
+				mockDiscover.HandlerFunc(b.Build(t))
+			}
+
+			taskEnv.PennsieveHost = mockDiscover.Server.URL
+			taskConfig := config.NewConfig(awsConfig, taskEnv)
+			// No calls should be made to S3
+			taskConfig.SetObjectProcessor(NewNoCallsObjectProcessor(t))
+
+			rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
+			idempotencyStore, err := taskConfig.IdempotencyStore()
+			require.NoError(t, err)
+
+			err = RehydrationTaskHandler(ctx, rehydrator, idempotencyStore)
+			require.Error(t, err)
+
+			// idempotency record should have been deleted so that another attempt can be made
+			idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
+			require.Len(t, idempotencyItems, 0)
+		})
+
+	}
+}
+
+func discoverDatasetByVersionPath(dataset models.Dataset) string {
+	return fmt.Sprintf("/discover/datasets/%d/versions/%d", dataset.ID, dataset.VersionID)
+}
+
+func discoverDatasetByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string) *test.HandlerFuncBuilder {
+	pattern := discoverDatasetByVersionPath(dataset)
 	respModel := discover.GetDatasetByVersionResponse{
 		ID:      int32(dataset.ID),
 		Name:    "test dataset",
 		Version: int32(dataset.VersionID),
 		Uri:     fmt.Sprintf("s3://%s/%d/", expectedBucket, dataset.ID),
 	}
-	mockDiscover.ModelHandlerFunc(http.MethodGet, pattern, respModel)
+	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
 }
 
-func addDatasetMetadataByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedDatasetFiles []discover.DatasetFile) {
-	pattern := fmt.Sprintf("/discover/datasets/%d/versions/%d/metadata", dataset.ID, dataset.VersionID)
+func errorDiscoverDatasetByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
+	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
+	return test.NewHandlerFuncBuilder(discoverDatasetByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
+}
+
+func addDatasetByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedBucket string) {
+	mockDiscover.HandlerFunc(discoverDatasetByVersionHandlerBuilder(dataset, expectedBucket).Build(mockDiscover.T))
+}
+
+func discoverDatasetMetadataByVersionPath(dataset models.Dataset) string {
+	return fmt.Sprintf("/discover/datasets/%d/versions/%d/metadata", dataset.ID, dataset.VersionID)
+}
+func discoverDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, expectedDatasetFiles []discover.DatasetFile) *test.HandlerFuncBuilder {
+	pattern := discoverDatasetMetadataByVersionPath(dataset)
 	respModel := discover.GetDatasetMetadataByVersionResponse{
 		ID:      int32(dataset.ID),
 		Name:    "test dataset",
 		Version: int32(dataset.VersionID),
 		Files:   expectedDatasetFiles,
 	}
-	mockDiscover.ModelHandlerFunc(http.MethodGet, pattern, respModel)
+	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
 }
 
-func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset *models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) {
-	pattern := fmt.Sprintf("/discover/datasets/%d/versions/%d/files", dataset.ID, dataset.VersionID)
+func errorDiscoverDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
+	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
+	return test.NewHandlerFuncBuilder(discoverDatasetMetadataByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
+}
+func addDatasetMetadataByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedDatasetFiles []discover.DatasetFile) {
+	mockDiscover.HandlerFunc(discoverDatasetMetadataByVersionHandlerBuilder(dataset, expectedDatasetFiles).Build(mockDiscover.T))
+}
 
-	mockDiscover.MultiModelHandlerFunction(http.MethodGet, pattern, func(r *http.Request) any {
+func discoverDatasetFileByVersionPath(dataset models.Dataset) string {
+	return fmt.Sprintf("/discover/datasets/%d/versions/%d/files", dataset.ID, dataset.VersionID)
+}
+
+func discoverDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) *test.HandlerFuncBuilder {
+	pattern := discoverDatasetFileByVersionPath(dataset)
+	selectorFunc := func(r *http.Request) (int, any) {
 		pathQueryParam := r.URL.Query().Get("path")
 		datasetFile, ok := expectedDatasetFileByPath[pathQueryParam]
 		if !ok {
-			return nil
+			return 0, nil
 		}
 		responseModel := discover.GetDatasetFileByVersionResponse{
 			Name:        "test dataset",
@@ -169,8 +256,18 @@ func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, da
 			Uri:         fmt.Sprintf("s3://%s/%d/%s", expectedBucket, dataset.ID, datasetFile.Path),
 			S3VersionID: datasetFile.S3VersionID,
 		}
-		return responseModel
-	})
+		return http.StatusOK, responseModel
+	}
+	return test.NewHandlerFuncBuilder(pattern).WithSelectorFunc(selectorFunc)
+}
+
+func errorDiscoverDatasetFileByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
+	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
+	return test.NewHandlerFuncBuilder(discoverDatasetFileByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
+}
+
+func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) {
+	mockDiscover.HandlerFunc(discoverDatasetFileByVersionHandlerBuilder(dataset, expectedBucket, expectedDatasetFileByPath).Build(mockDiscover.T))
 }
 
 func newTestConfigEnv(idempotencyTable string) *config.Env {
@@ -292,21 +389,34 @@ func TestNewTestDatasetFiles(t *testing.T) {
 	}
 }
 
-type MockObjectProcessor struct {
+type MockFailingObjectProcessor struct {
 	FailOnPaths map[string]bool
 }
 
-func NewMockObjectProcessor(failOnPaths []string) *MockObjectProcessor {
-	mock := MockObjectProcessor{FailOnPaths: map[string]bool{}}
+func NewMockFailingObjectProcessor(failOnPaths ...string) *MockFailingObjectProcessor {
+	mock := MockFailingObjectProcessor{FailOnPaths: map[string]bool{}}
 	for _, p := range failOnPaths {
 		mock.FailOnPaths[p] = true
 	}
 	return &mock
 }
 
-func (m MockObjectProcessor) Copy(_ context.Context, source objects.Source, _ objects.Destination) error {
+func (m MockFailingObjectProcessor) Copy(_ context.Context, source objects.Source, _ objects.Destination) error {
 	if _, fail := m.FailOnPaths[source.GetPath()]; fail {
 		return fmt.Errorf("error copying %s", source.GetVersionedUri())
 	}
+	return nil
+}
+
+type MockNoCallsObjectProcessor struct {
+	testingT require.TestingT
+}
+
+func NewNoCallsObjectProcessor(t require.TestingT) *MockNoCallsObjectProcessor {
+	return &MockNoCallsObjectProcessor{testingT: t}
+}
+
+func (m *MockNoCallsObjectProcessor) Copy(_ context.Context, source objects.Source, destination objects.Destination) error {
+	assert.Failf(m.testingT, "unexpected call to S3 Copy", "source: %s, destination: %s", source.GetVersionedUri(), destination.GetKey())
 	return nil
 }

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve/models/discover"
 	"github.com/pennsieve/rehydration-service/fargate/config"
+	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -26,24 +28,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	taskEnv := newTestConfigEnv(idempotencyTable)
 	dataset := taskEnv.Dataset
 
-	var datasetFiles []TestDatasetFile
-	for i := 1; i <= 50; i++ {
-		name := fmt.Sprintf("file%d.txt", i)
-		path := fmt.Sprintf("files/dir%d/%s", i, name)
-		content := fmt.Sprintf("content of %s\n", name)
-		datasetFiles = append(datasetFiles, TestDatasetFile{
-			DatasetFile: discover.DatasetFile{
-				Name:     name,
-				Path:     path,
-				FileType: "TEXT",
-				Size:     int64(len([]byte(content))),
-			},
-			content: content,
-			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
-		})
-	}
-
-	testDatasetFiles := NewTestDatasetFiles(datasetFiles)
+	testDatasetFiles := NewTestDatasetFiles(*dataset, 50)
 
 	for testName, testParams := range map[string]struct {
 		thresholdSize int64
@@ -57,16 +42,13 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			Bucket: aws.String(publishBucket),
 		}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
 
+		// Set S3 versionIds
 		for location, putOutput := range putObjectOutputs {
-			testDatasetFiles.SetS3VersionId(t, location, aws.ToString(putOutput.VersionId))
+			testDatasetFiles.SetS3VersionID(t, location, aws.ToString(putOutput.VersionId))
 		}
 
 		// Setup DynamoDB for tests
-		initialIdempotencyRecord := &idempotency.Record{
-			ID:             idempotency.RecordID(dataset.ID, dataset.VersionID),
-			Status:         idempotency.InProgress,
-			FargateTaskARN: "arn:aws:dynamoDB:test:test:test",
-		}
+		initialIdempotencyRecord := newInProgressRecord(*dataset)
 		dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
 			test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 
@@ -83,7 +65,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			idempotencyStore, err := taskConfig.IdempotencyStore()
 			require.NoError(t, err)
 			require.NoError(t, RehydrationTaskHandler(ctx, rehydrator, idempotencyStore))
-			for _, datasetFile := range datasetFiles {
+			for _, datasetFile := range testDatasetFiles.Files {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
 			}
@@ -102,6 +84,48 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		dyDB.Teardown()
 		mockDiscover.Teardown()
 	}
+}
+
+func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	idempotencyTable := "main-test-idempotency-table"
+	publishBucket := "discover-bucket"
+	taskEnv := newTestConfigEnv(idempotencyTable)
+	dataset := taskEnv.Dataset
+
+	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+	copyFailPath := testDatasetFiles.Files[17].Path
+
+	// Setup DynamoDB for tests
+	initialIdempotencyRecord := newInProgressRecord(*dataset)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
+		test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+	defer dyDB.Teardown()
+
+	// Create a mock Discover API server
+	mockDiscover := test.NewDiscoverServerFixture(t, nil)
+	defer mockDiscover.Teardown()
+
+	taskEnv.PennsieveHost = mockDiscover.Server.URL
+	addDatasetByVersionHandler(mockDiscover, dataset, publishBucket)
+	addDatasetMetadataByVersionHandler(mockDiscover, dataset, testDatasetFiles.DatasetFiles())
+	addDatasetFileByVersionHandler(mockDiscover, dataset, publishBucket, testDatasetFiles.ByPath)
+
+	taskConfig := config.NewConfig(awsConfig, taskEnv)
+	taskConfig.SetObjectProcessor(NewMockObjectProcessor([]string{copyFailPath}))
+
+	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
+	idempotencyStore, err := taskConfig.IdempotencyStore()
+	require.NoError(t, err)
+
+	err = RehydrationTaskHandler(ctx, rehydrator, idempotencyStore)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), copyFailPath)
+
+	// Idempotency record should have been deleted so that another attempt can be made
+	idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
+	require.Len(t, idempotencyItems, 0)
 }
 
 // this is written to Go 1.21 where http.ServeMux patterns do not yet have methods or wildcards. So this function can be made more
@@ -167,6 +191,14 @@ func newTestConfigEnv(idempotencyTable string) *config.Env {
 	}
 }
 
+func newInProgressRecord(dataset models.Dataset) *idempotency.Record {
+	return &idempotency.Record{
+		ID:             idempotency.RecordID(dataset.ID, dataset.VersionID),
+		Status:         idempotency.InProgress,
+		FargateTaskARN: "arn:aws:dynamoDB:test:test:test",
+	}
+}
+
 type TestDatasetFile struct {
 	discover.DatasetFile
 	content string
@@ -179,22 +211,45 @@ type TestDatasetFiles struct {
 	ByKey  map[string]*TestDatasetFile
 }
 
-func NewTestDatasetFiles(files []TestDatasetFile) *TestDatasetFiles {
+func NewTestDatasetFiles(dataset models.Dataset, count int) *TestDatasetFiles {
+	datasetFiles := make([]TestDatasetFile, count)
 	datasetFilesByPath := map[string]*TestDatasetFile{}
 	datasetFilesByKey := map[string]*TestDatasetFile{}
-	for i := range files {
-		f := &files[i]
-		datasetFilesByPath[f.Path] = f
-		datasetFilesByKey[f.s3key] = f
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("file%d.txt", i)
+		path := fmt.Sprintf("files/dir%d/%s", i, name)
+		content := fmt.Sprintf("content of %s\n", name)
+		datasetFile := TestDatasetFile{
+			DatasetFile: discover.DatasetFile{
+				Name:     name,
+				Path:     path,
+				FileType: "TEXT",
+				Size:     int64(len([]byte(content))),
+			},
+			content: content,
+			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
+		}
+		datasetFiles[i] = datasetFile
+		datasetFilesByPath[datasetFile.Path] = &datasetFiles[i]
+		datasetFilesByKey[datasetFile.s3key] = &datasetFiles[i]
 	}
+
 	return &TestDatasetFiles{
-		Files:  files,
+		Files:  datasetFiles,
 		ByPath: datasetFilesByPath,
 		ByKey:  datasetFilesByKey,
 	}
 }
 
-func (f *TestDatasetFiles) SetS3VersionId(t *testing.T, s3Location test.S3Location, s3VersionId string) {
+func (f *TestDatasetFiles) WithFakeS3VersionsIDs() *TestDatasetFiles {
+	for i := range f.Files {
+		file := &f.Files[i]
+		file.S3VersionID = uuid.NewString()
+	}
+	return f
+}
+
+func (f *TestDatasetFiles) SetS3VersionID(t *testing.T, s3Location test.S3Location, s3VersionId string) {
 	datasetFile, ok := f.ByKey[s3Location.Key]
 	require.Truef(t, ok, "missing DatasetFile: bucket: %s, key: %s", s3Location.Bucket, s3Location.Key)
 	datasetFile.S3VersionID = s3VersionId
@@ -219,4 +274,39 @@ func (f *TestDatasetFiles) DatasetFiles() []discover.DatasetFile {
 		datasetFiles = append(datasetFiles, file.DatasetFile)
 	}
 	return datasetFiles
+}
+
+func TestNewTestDatasetFiles(t *testing.T) {
+	testDatasetFiles := NewTestDatasetFiles(models.Dataset{
+		ID:        1,
+		VersionID: 2,
+	}, 1).WithFakeS3VersionsIDs()
+
+	files := testDatasetFiles.Files
+
+	for i := 0; i < len(files); i++ {
+		byPath := testDatasetFiles.ByPath[files[i].Path]
+		assert.Same(t, &files[i], byPath)
+		assert.NotEmpty(t, files[i].S3VersionID)
+		assert.Equal(t, files[i].S3VersionID, byPath.S3VersionID)
+	}
+}
+
+type MockObjectProcessor struct {
+	FailOnPaths map[string]bool
+}
+
+func NewMockObjectProcessor(failOnPaths []string) *MockObjectProcessor {
+	mock := MockObjectProcessor{FailOnPaths: map[string]bool{}}
+	for _, p := range failOnPaths {
+		mock.FailOnPaths[p] = true
+	}
+	return &mock
+}
+
+func (m MockObjectProcessor) Copy(_ context.Context, source objects.Source, _ objects.Destination) error {
+	if _, fail := m.FailOnPaths[source.GetPath()]; fail {
+		return fmt.Errorf("error copying %s", source.GetVersionedUri())
+	}
+	return nil
 }

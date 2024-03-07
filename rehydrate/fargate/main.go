@@ -36,10 +36,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	taskConfig.Logger.Info("starting rehydration task")
 	if err := RehydrationTaskHandler(ctx, rehydrator, idempotencyStore); err != nil {
 		taskConfig.Logger.Error("error rehydrating dataset: %v", err)
 		os.Exit(1)
 	}
+	taskConfig.Logger.Info("rehydration complete")
 }
 
 func RehydrationTaskHandler(ctx context.Context, rehydrator *DatasetRehydrator, idempotencyStore idempotency.Store) error {

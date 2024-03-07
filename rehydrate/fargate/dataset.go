@@ -33,7 +33,6 @@ func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRe
 }
 
 func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult, error) {
-	dr.logger.Info("Running rehydrate task")
 	dataset32 := int32(dr.dataset.ID)
 	version32 := int32(dr.dataset.VersionID)
 
@@ -95,7 +94,6 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		fileResults = append(fileResults, result)
 	}
 
-	dr.logger.Info("Rehydration complete")
 	return &RehydrationResult{
 		Location:    utils.RehydrationLocation(destinationBucket, dr.dataset.ID, dr.dataset.VersionID),
 		FileResults: fileResults,

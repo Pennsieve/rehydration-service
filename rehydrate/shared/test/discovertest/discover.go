@@ -125,7 +125,26 @@ func ErrorGetDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, msg 
 	return test.NewHandlerFuncBuilder(GetDatasetMetadataByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
 }
 
-func ErrorGetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
-	response := ErrorResponse(msg, statusCode)
-	return test.NewHandlerFuncBuilder(GetDatasetFileByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
+func ErrorGetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]discover.DatasetFile, pathsToFail map[string]bool) *test.HandlerFuncBuilder {
+	pattern := GetDatasetFileByVersionPath(dataset)
+	selectorFunc := func(r *http.Request) (int, any) {
+		pathQueryParam := r.URL.Query().Get("path")
+		datasetFile, ok := expectedDatasetFileByPath[pathQueryParam]
+		if !ok {
+			return 0, nil
+		}
+		if _, fail := pathsToFail[pathQueryParam]; fail {
+			return http.StatusNotFound, ErrorResponse(fmt.Sprintf("file %s not found", pathQueryParam), http.StatusNotFound)
+		}
+		responseModel := discover.GetDatasetFileByVersionResponse{
+			Name:        "test dataset",
+			Path:        datasetFile.Path,
+			Size:        datasetFile.Size,
+			FileType:    datasetFile.FileType,
+			Uri:         fmt.Sprintf("s3://%s/%d/%s", expectedBucket, dataset.ID, datasetFile.Path),
+			S3VersionID: datasetFile.S3VersionID,
+		}
+		return http.StatusOK, responseModel
+	}
+	return test.NewHandlerFuncBuilder(pattern).WithSelectorFunc(selectorFunc)
 }

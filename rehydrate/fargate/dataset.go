@@ -50,17 +50,18 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 	}
 
 	numberOfRehydrations := len(datasetMetadataByVersionResponse.Files)
-	rehydrations := make(chan *Rehydration, numberOfRehydrations)
+	rehydrationCh := make(chan *Rehydration, numberOfRehydrations)
 	results := make(chan FileRehydrationResult, numberOfRehydrations)
 
 	dr.logger.Info("Starting Rehydration process")
 	// create workers
 	NumConcurrentWorkers := 20
 	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(ctx, i, rehydrations, results, dr.processor)
+		go worker(ctx, i, rehydrationCh, results, dr.processor)
 	}
 
 	// create work
+	var rehydrations []*Rehydration
 	for _, j := range datasetMetadataByVersionResponse.Files {
 		if err != nil {
 			return nil, err
@@ -70,8 +71,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		if err != nil {
 			return nil, fmt.Errorf("error retrieving dataset file %s by version: %w", j.Path, err)
 		}
-
-		rehydrations <- NewRehydration(
+		rehydrations = append(rehydrations, NewRehydration(
 			SourceObject{
 				DatasetUri: datasetFileByVersionResponse.Uri,
 				Size:       datasetFileByVersionResponse.Size,
@@ -83,9 +83,13 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 				Key: utils.CreateDestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
 					datasetFileByVersionResponse.Path),
-			})
+			}))
 	}
-	close(rehydrations)
+	// Only submit rehydrations once we know there are no GetDatasetFileByVersion errors
+	for _, rehydration := range rehydrations {
+		rehydrationCh <- rehydration
+	}
+	close(rehydrationCh)
 
 	var fileResults []FileRehydrationResult
 	// wait for the done signal

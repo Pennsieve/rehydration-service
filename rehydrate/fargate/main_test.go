@@ -16,17 +16,18 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/test/discovertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 )
 
 func TestRehydrationTaskHandler(t *testing.T) {
+	test.SetLogLevel(t, slog.LevelError)
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().WithMinIO().Config(ctx, false)
-	idempotencyTable := "main-test-idempotency-table"
 	publishBucket := "discover-bucket"
-	taskEnv := newTestConfigEnv(idempotencyTable)
+	taskEnv := newTestConfigEnv()
 	dataset := taskEnv.Dataset
 
 	testDatasetFiles := NewTestDatasetFiles(*dataset, 50)
@@ -50,8 +51,8 @@ func TestRehydrationTaskHandler(t *testing.T) {
 
 		// Setup DynamoDB for tests
 		initialIdempotencyRecord := newInProgressRecord(*dataset)
-		dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
-			test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+		dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName)).WithItems(
+			test.RecordsToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
 
 		// Create a mock Discover API server
 		mockDiscover := discovertest.NewServerFixture(t, nil,
@@ -71,7 +72,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
 			}
-			idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
+			idempotencyItems := dyDB.Scan(ctx, taskEnv.IdempotencyTable)
 			require.Len(t, idempotencyItems, 1)
 			updatedIdempotencyRecord, err := idempotency.FromItem(idempotencyItems[0])
 			require.NoError(t, err)
@@ -91,9 +92,9 @@ func TestRehydrationTaskHandler(t *testing.T) {
 func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	idempotencyTable := "main-test-idempotency-table"
 	publishBucket := "discover-bucket"
-	taskEnv := newTestConfigEnv(idempotencyTable)
+	taskEnv := newTestConfigEnv()
+	idempotencyTable := taskEnv.IdempotencyTable
 	dataset := taskEnv.Dataset
 
 	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
@@ -135,13 +136,14 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	idempotencyTable := "main-test-idempotency-table"
 	publishBucket := "discover-bucket"
-	taskEnv := newTestConfigEnv(idempotencyTable)
+	taskEnv := newTestConfigEnv()
+	idempotencyTable := taskEnv.IdempotencyTable
 	dataset := taskEnv.Dataset
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
 
 	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+	pathsToFail := map[string]bool{testDatasetFiles.Files[24].Path: true}
 
 	for testName, testParams := range map[string]struct {
 		discoverBuilders []*test.HandlerFuncBuilder
@@ -156,7 +158,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 		"get dataset file error": {discoverBuilders: []*test.HandlerFuncBuilder{
 			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-			discovertest.ErrorGetDatasetFileByVersionHandlerBuilder(*dataset, "file not found", http.StatusNotFound),
+			discovertest.ErrorGetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath(), pathsToFail),
 		}},
 	} {
 
@@ -190,7 +192,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	}
 }
 
-func newTestConfigEnv(idempotencyTable string) *config.Env {
+func newTestConfigEnv() *config.Env {
 	dataset := &models.Dataset{
 		ID:        1234,
 		VersionID: 3,
@@ -204,7 +206,7 @@ func newTestConfigEnv(idempotencyTable string) *config.Env {
 		Dataset:          dataset,
 		User:             user,
 		TaskEnv:          "TEST",
-		IdempotencyTable: idempotencyTable,
+		IdempotencyTable: "test-idempotency-table",
 	}
 }
 

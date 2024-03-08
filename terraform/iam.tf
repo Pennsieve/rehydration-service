@@ -191,7 +191,7 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 
   statement {
-    sid    = "RehydrationLambdaLambdaDynamoDBPermissions"
+    sid    = "RehydrationLambdaDynamoDBPermissions"
     effect = "Allow"
 
     actions = [

@@ -22,5 +22,5 @@ services:
   minio-ci:
     image: minio/minio
     env_file:
-      - test-common.env # contains fake aws creds for minio
+      - test-common.env # contains root creds for minio
     command: server --console-address ":9001" /data

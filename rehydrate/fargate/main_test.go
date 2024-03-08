@@ -13,6 +13,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
+	"github.com/pennsieve/rehydration-service/shared/test/discovertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"net/http"
@@ -53,10 +54,11 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 
 		// Create a mock Discover API server
-		mockDiscover := test.NewDiscoverServerFixture(t, nil)
-		addDatasetByVersionHandler(mockDiscover, *dataset, publishBucket)
-		addDatasetMetadataByVersionHandler(mockDiscover, *dataset, testDatasetFiles.DatasetFiles())
-		addDatasetFileByVersionHandler(mockDiscover, *dataset, publishBucket, testDatasetFiles.ByPath)
+		mockDiscover := discovertest.NewServerFixture(t, nil,
+			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
+			discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+		)
 
 		t.Run(testName, func(t *testing.T) {
 			taskEnv.PennsieveHost = mockDiscover.Server.URL
@@ -104,14 +106,15 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	defer dyDB.Teardown()
 
 	// Create a mock Discover API server
-	mockDiscover := test.NewDiscoverServerFixture(t, nil)
+	mockDiscover := discovertest.NewServerFixture(t, nil,
+		discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+		discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
+		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+	)
+
 	defer mockDiscover.Teardown()
 
 	taskEnv.PennsieveHost = mockDiscover.Server.URL
-	addDatasetByVersionHandler(mockDiscover, *dataset, publishBucket)
-	addDatasetMetadataByVersionHandler(mockDiscover,
-		*dataset, testDatasetFiles.DatasetFiles())
-	addDatasetFileByVersionHandler(mockDiscover, *dataset, publishBucket, testDatasetFiles.ByPath)
 
 	taskConfig := config.NewConfig(awsConfig, taskEnv)
 	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(copyFailPath))
@@ -144,16 +147,16 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 		discoverBuilders []*test.HandlerFuncBuilder
 	}{
 		"get dataset error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			errorDiscoverDatasetByVersionHandlerBuilder(*dataset, "dataset not found", http.StatusNotFound)},
+			discovertest.ErrorGetDatasetByVersionHandlerBuilder(*dataset, "dataset not found", http.StatusNotFound)},
 		},
 		"get dataset metadata error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discoverDatasetByVersionHandlerBuilder(*dataset, publishBucket),
-			errorDiscoverDatasetMetadataByVersionHandlerBuilder(*dataset, "internal service error", http.StatusInternalServerError)},
+			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+			discovertest.ErrorGetDatasetMetadataByVersionHandlerBuilder(*dataset, "internal service error", http.StatusInternalServerError)},
 		},
 		"get dataset file error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discoverDatasetByVersionHandlerBuilder(*dataset, publishBucket),
-			discoverDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-			errorDiscoverDatasetFileByVersionHandlerBuilder(*dataset, "file not found", http.StatusNotFound),
+			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
+			discovertest.ErrorGetDatasetFileByVersionHandlerBuilder(*dataset, "file not found", http.StatusNotFound),
 		}},
 	} {
 
@@ -164,11 +167,8 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			defer dyDB.Teardown()
 
 			// Create a mock Discover API server
-			mockDiscover := test.NewDiscoverServerFixture(t, nil)
+			mockDiscover := discovertest.NewServerFixture(t, nil, testParams.discoverBuilders...)
 			defer mockDiscover.Teardown()
-			for _, b := range testParams.discoverBuilders {
-				mockDiscover.HandlerFunc(b.Build(t))
-			}
 
 			taskEnv.PennsieveHost = mockDiscover.Server.URL
 			taskConfig := config.NewConfig(awsConfig, taskEnv)
@@ -188,86 +188,6 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 		})
 
 	}
-}
-
-func discoverDatasetByVersionPath(dataset models.Dataset) string {
-	return fmt.Sprintf("/discover/datasets/%d/versions/%d", dataset.ID, dataset.VersionID)
-}
-
-func discoverDatasetByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string) *test.HandlerFuncBuilder {
-	pattern := discoverDatasetByVersionPath(dataset)
-	respModel := discover.GetDatasetByVersionResponse{
-		ID:      int32(dataset.ID),
-		Name:    "test dataset",
-		Version: int32(dataset.VersionID),
-		Uri:     fmt.Sprintf("s3://%s/%d/", expectedBucket, dataset.ID),
-	}
-	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
-}
-
-func errorDiscoverDatasetByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
-	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
-	return test.NewHandlerFuncBuilder(discoverDatasetByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
-}
-
-func addDatasetByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedBucket string) {
-	mockDiscover.HandlerFunc(discoverDatasetByVersionHandlerBuilder(dataset, expectedBucket).Build(mockDiscover.T))
-}
-
-func discoverDatasetMetadataByVersionPath(dataset models.Dataset) string {
-	return fmt.Sprintf("/discover/datasets/%d/versions/%d/metadata", dataset.ID, dataset.VersionID)
-}
-func discoverDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, expectedDatasetFiles []discover.DatasetFile) *test.HandlerFuncBuilder {
-	pattern := discoverDatasetMetadataByVersionPath(dataset)
-	respModel := discover.GetDatasetMetadataByVersionResponse{
-		ID:      int32(dataset.ID),
-		Name:    "test dataset",
-		Version: int32(dataset.VersionID),
-		Files:   expectedDatasetFiles,
-	}
-	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
-}
-
-func errorDiscoverDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
-	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
-	return test.NewHandlerFuncBuilder(discoverDatasetMetadataByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
-}
-func addDatasetMetadataByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedDatasetFiles []discover.DatasetFile) {
-	mockDiscover.HandlerFunc(discoverDatasetMetadataByVersionHandlerBuilder(dataset, expectedDatasetFiles).Build(mockDiscover.T))
-}
-
-func discoverDatasetFileByVersionPath(dataset models.Dataset) string {
-	return fmt.Sprintf("/discover/datasets/%d/versions/%d/files", dataset.ID, dataset.VersionID)
-}
-
-func discoverDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) *test.HandlerFuncBuilder {
-	pattern := discoverDatasetFileByVersionPath(dataset)
-	selectorFunc := func(r *http.Request) (int, any) {
-		pathQueryParam := r.URL.Query().Get("path")
-		datasetFile, ok := expectedDatasetFileByPath[pathQueryParam]
-		if !ok {
-			return 0, nil
-		}
-		responseModel := discover.GetDatasetFileByVersionResponse{
-			Name:        "test dataset",
-			Path:        datasetFile.Path,
-			Size:        datasetFile.Size,
-			FileType:    datasetFile.FileType,
-			Uri:         fmt.Sprintf("s3://%s/%d/%s", expectedBucket, dataset.ID, datasetFile.Path),
-			S3VersionID: datasetFile.S3VersionID,
-		}
-		return http.StatusOK, responseModel
-	}
-	return test.NewHandlerFuncBuilder(pattern).WithSelectorFunc(selectorFunc)
-}
-
-func errorDiscoverDatasetFileByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
-	response := fmt.Sprintf(`{"Code": %d, "Message": %q}`, statusCode, msg)
-	return test.NewHandlerFuncBuilder(discoverDatasetFileByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
-}
-
-func addDatasetFileByVersionHandler(mockDiscover *test.DiscoverServerFixture, dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) {
-	mockDiscover.HandlerFunc(discoverDatasetFileByVersionHandlerBuilder(dataset, expectedBucket, expectedDatasetFileByPath).Build(mockDiscover.T))
 }
 
 func newTestConfigEnv(idempotencyTable string) *config.Env {
@@ -371,6 +291,14 @@ func (f *TestDatasetFiles) DatasetFiles() []discover.DatasetFile {
 		datasetFiles = append(datasetFiles, file.DatasetFile)
 	}
 	return datasetFiles
+}
+
+func (f *TestDatasetFiles) DatasetFilesByPath() map[string]discover.DatasetFile {
+	dfByPath := map[string]discover.DatasetFile{}
+	for p, f := range f.ByPath {
+		dfByPath[p] = f.DatasetFile
+	}
+	return dfByPath
 }
 
 func TestNewTestDatasetFiles(t *testing.T) {

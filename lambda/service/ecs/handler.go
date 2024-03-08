@@ -74,6 +74,7 @@ func (h *handler) Handle(ctx context.Context, dataset sharedmodels.Dataset, user
 	return taskARN, taskFailure
 }
 
+// taskLogGroup returns a view of a types.Task as a slog.Group for structured logging
 func taskLogGroup(task types.Task) slog.Attr {
 	return slog.Group("task",
 		slog.String("arn", aws.ToString(task.TaskArn)),

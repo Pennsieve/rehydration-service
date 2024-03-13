@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/models"
 	"strings"
 )
 
@@ -60,5 +61,5 @@ func FromItem(item map[string]types.AttributeValue) (*Record, error) {
 }
 
 func RecordID(datasetID, datasetVersionID int) string {
-	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)
+	return models.DatasetVersion(datasetID, datasetVersionID)
 }

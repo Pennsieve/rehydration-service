@@ -1,0 +1,112 @@
+package tracking
+
+import (
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/models"
+	"strings"
+	"time"
+)
+
+type RehydrationStatus string
+
+const (
+	InProgress RehydrationStatus = "IN_PROGRESS"
+	Completed  RehydrationStatus = "COMPLETED"
+	Failed     RehydrationStatus = "FAILED"
+)
+
+func RehydrationStatusFromString(s string) (RehydrationStatus, error) {
+	switch strings.ToUpper(s) {
+	case string(InProgress):
+		return InProgress, nil
+	case string(Completed):
+		return Completed, nil
+	case string(Failed):
+		return Failed, nil
+	default:
+		return "", fmt.Errorf("unknown rehydration status: [%s]", s)
+	}
+}
+
+const IDAttrName = "id"
+const DatasetVersionAttrName = "datasetVersion"
+const UserNameAttrName = "userName"
+const UserEmailAttrName = "userEmail"
+const LambdaLogStreamAttrName = "lambdaLogStream"
+const AWSRequestIDAttrName = "awsRequestId"
+const RequestDateAttrName = "requestDate"
+const RehydrationStatusAttrName = "rehydrationStatus"
+const EmailSentDateAttrName = "emailSentDate"
+const FargateTaskARNAttrName = "fargateTaskARN"
+
+type DatasetVersionIndex struct {
+	DatasetVersion    string            `dynamodbav:"datasetVersion"`
+	UserName          string            `dynamodbav:"userName"`
+	UserEmail         string            `dynamodbav:"userEmail"`
+	RehydrationStatus RehydrationStatus `dynamodbav:"rehydrationStatus"`
+}
+type Entry struct {
+	ID string `dynamodbav:"id"`
+	DatasetVersionIndex
+	LambdaLogStream string    `dynamodbav:"lambdaLogStream"`
+	AWSRequestID    string    `dynamodbav:"awsRequestId"`
+	RequestDate     time.Time `dynamodbav:"requestDate"`
+	// EmailSentDate is a pointer because omitempty does not work with time.Time:
+	// https://github.com/aws/aws-sdk-go/issues/2040 (issue is for the V1 SDK, but I saw the same thing with V2)
+	// This is the cleanest way to ensure that entries that haven't had their email sent date result in table items
+	// with no email sent date field attribure instead of having the attribute set to the time.Time zero value 0001-01-01T00:00:00Z
+	EmailSentDate  *time.Time `dynamodbav:"emailSentDate,omitempty"`
+	FargateTaskARN string     `dynamodbav:"fargateTaskARN,omitempty"`
+}
+
+func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) *Entry {
+	requestDate := time.Now()
+	return &Entry{
+		ID: id,
+		DatasetVersionIndex: DatasetVersionIndex{
+			DatasetVersion:    dataset.DatasetVersion(),
+			UserName:          user.Name,
+			UserEmail:         user.Email,
+			RehydrationStatus: InProgress,
+		},
+		LambdaLogStream: lambdaLogStream,
+		AWSRequestID:    awsRequestID,
+		RequestDate:     requestDate,
+		FargateTaskARN:  fargateTaskARN,
+	}
+}
+
+func (r *Entry) Item() (map[string]types.AttributeValue, error) {
+	item, err := attributevalue.MarshalMap(r)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling Entry %+v to DynamoDB item: %w", r, err)
+
+	}
+	return item, nil
+}
+
+func FromItem(item map[string]types.AttributeValue) (*Entry, error) {
+	var entry Entry
+	if err := attributevalue.UnmarshalMap(item, &entry); err != nil {
+		return nil, fmt.Errorf("error unmarshalling item to Entry: %w", err)
+	}
+	return &entry, nil
+}
+
+func DatasetVersionIndexFromItem(item map[string]types.AttributeValue) (*DatasetVersionIndex, error) {
+	var index DatasetVersionIndex
+	if err := attributevalue.UnmarshalMap(item, &index); err != nil {
+		return nil, fmt.Errorf("error unmarshalling item to DatasetVersionIndex: %w", err)
+	}
+	return &index, nil
+}
+
+func entryItemKeyFromID(id string) map[string]types.AttributeValue {
+	return map[string]types.AttributeValue{IDAttrName: stringAttributeValue(id)}
+}
+
+func stringAttributeValue(attributeValue string) types.AttributeValue {
+	return &types.AttributeValueMemberS{Value: attributeValue}
+}

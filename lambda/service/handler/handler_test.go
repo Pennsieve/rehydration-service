@@ -359,7 +359,7 @@ func (b *FixtureBuilder) withIdempotencyRecords(records ...sharedidempotency.Rec
 	}
 	for i := range records {
 		record := &records[i]
-		b.putItemInputs = append(b.putItemInputs, test.RecordsToPutItemInputs(b.testingT, b.idempotencyTableName, record)...)
+		b.putItemInputs = append(b.putItemInputs, test.ItemersToPutItemInputs(b.testingT, b.idempotencyTableName, record)...)
 	}
 	return b
 }

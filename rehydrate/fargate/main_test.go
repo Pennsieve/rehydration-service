@@ -52,7 +52,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		// Setup DynamoDB for tests
 		initialIdempotencyRecord := newInProgressRecord(*dataset)
 		dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName)).WithItems(
-			test.RecordsToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
+			test.ItemersToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
 
 		// Create a mock Discover API server
 		mockDiscover := discovertest.NewServerFixture(t, nil,
@@ -103,7 +103,7 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	// Setup DynamoDB for tests
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
 	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
-		test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+		test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 	defer dyDB.Teardown()
 
 	// Create a mock Discover API server
@@ -165,7 +165,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Setup DynamoDB for tests
 			dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
-				test.RecordsToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+				test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 			defer dyDB.Teardown()
 
 			// Create a mock Discover API server

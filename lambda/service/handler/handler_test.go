@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/handler"
-	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
 	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
@@ -82,12 +81,10 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 
 	expectedStatusCode := 500
 	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
-	require.Error(t, err)
-	var inProgressError idempotency.InProgressError
-	require.ErrorAs(t, err, &inProgressError)
+	require.NoError(t, err)
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
-	require.Contains(t, response.Body, inProgressError.Error())
+	require.Contains(t, response.Body, "in progress")
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
@@ -118,12 +115,10 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 
 	expectedStatusCode := 500
 	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
-	require.Error(t, err)
-	var expiredError idempotency.ExpiredError
-	require.ErrorAs(t, err, &expiredError)
+	require.NoError(t, err)
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
-	require.Contains(t, response.Body, expiredError.Error())
+	require.Contains(t, response.Body, "expiration in progress")
 
 	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
@@ -182,7 +177,7 @@ func TestRehydrationServiceHandler_ECSError(t *testing.T) {
 	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
 	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
-	require.Error(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	fmt.Println(response.Body)
@@ -214,7 +209,7 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 			request := newLambdaRequest(params.body)
 
 			response, err := handler.RehydrationServiceHandler(ctx, request)
-			require.Error(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, http.StatusBadRequest, response.StatusCode,
 				"expected status code %v, got %v", http.StatusBadRequest, response.StatusCode)
 			assert.Contains(t, response.Body, params.expectedResponsePart)

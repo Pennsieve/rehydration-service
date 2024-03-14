@@ -70,6 +70,25 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
     ]
   }
+
+  statement {
+    sid    = "RehydrationFargateDynamoDBPermissions"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:UpdateItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+
+    resources = [
+      aws_dynamodb_table.idempotency_table.arn,
+      "${aws_dynamodb_table.idempotency_table.arn}/*",
+    ]
+
+  }
+
   statement {
     sid     = "TaskLogPermissions"
     effect  = "Allow"

@@ -5,7 +5,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
   function_name    = "${var.environment_name}-${var.service_name}-fargate-trigger-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   reserved_concurrent_executions = 1 // don't allow concurrent lambda's
   handler          = "bootstrap"
-  runtime          = "provided.al2023"
+  runtime          = "provided.al2"
   architectures    = ["arm64"]
   role             = aws_iam_role.rehydration_lambda_role.arn
   timeout          = 30

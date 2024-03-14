@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/google/uuid"
-	"github.com/pennsieve/pennsieve-go/pkg/pennsieve/models/discover"
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
@@ -18,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"log/slog"
 	"net/http"
-	"strings"
 	"testing"
 )
 
@@ -30,7 +27,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	taskEnv := newTestConfigEnv()
 	dataset := taskEnv.Dataset
 
-	testDatasetFiles := NewTestDatasetFiles(*dataset, 50)
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50)
 
 	for testName, testParams := range map[string]struct {
 		thresholdSize int64
@@ -58,7 +55,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		mockDiscover := discovertest.NewServerFixture(t, nil,
 			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-			discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+			discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 		)
 
 		t.Run(testName, func(t *testing.T) {
@@ -97,7 +94,7 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	idempotencyTable := taskEnv.IdempotencyTable
 	dataset := taskEnv.Dataset
 
-	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
 	copyFailPath := testDatasetFiles.Files[17].Path
 
 	// Setup DynamoDB for tests
@@ -110,7 +107,7 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	mockDiscover := discovertest.NewServerFixture(t, nil,
 		discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 		discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 	)
 
 	defer mockDiscover.Teardown()
@@ -142,7 +139,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	dataset := taskEnv.Dataset
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
 
-	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
 	pathsToFail := map[string]bool{testDatasetFiles.Files[24].Path: true}
 
 	for testName, testParams := range map[string]struct {
@@ -215,107 +212,6 @@ func newInProgressRecord(dataset models.Dataset) *idempotency.Record {
 		ID:             idempotency.RecordID(dataset.ID, dataset.VersionID),
 		Status:         idempotency.InProgress,
 		FargateTaskARN: "arn:aws:dynamoDB:test:test:test",
-	}
-}
-
-type TestDatasetFile struct {
-	discover.DatasetFile
-	content string
-	s3key   string
-}
-
-type TestDatasetFiles struct {
-	Files  []TestDatasetFile
-	ByPath map[string]*TestDatasetFile
-	ByKey  map[string]*TestDatasetFile
-}
-
-func NewTestDatasetFiles(dataset models.Dataset, count int) *TestDatasetFiles {
-	datasetFiles := make([]TestDatasetFile, count)
-	datasetFilesByPath := map[string]*TestDatasetFile{}
-	datasetFilesByKey := map[string]*TestDatasetFile{}
-	for i := 0; i < count; i++ {
-		name := fmt.Sprintf("file%d.txt", i)
-		path := fmt.Sprintf("files/dir%d/%s", i, name)
-		content := fmt.Sprintf("content of %s\n", name)
-		datasetFile := TestDatasetFile{
-			DatasetFile: discover.DatasetFile{
-				Name:     name,
-				Path:     path,
-				FileType: "TEXT",
-				Size:     int64(len([]byte(content))),
-			},
-			content: content,
-			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
-		}
-		datasetFiles[i] = datasetFile
-		datasetFilesByPath[datasetFile.Path] = &datasetFiles[i]
-		datasetFilesByKey[datasetFile.s3key] = &datasetFiles[i]
-	}
-
-	return &TestDatasetFiles{
-		Files:  datasetFiles,
-		ByPath: datasetFilesByPath,
-		ByKey:  datasetFilesByKey,
-	}
-}
-
-func (f *TestDatasetFiles) WithFakeS3VersionsIDs() *TestDatasetFiles {
-	for i := range f.Files {
-		file := &f.Files[i]
-		file.S3VersionID = uuid.NewString()
-	}
-	return f
-}
-
-func (f *TestDatasetFiles) SetS3VersionID(t *testing.T, s3Location test.S3Location, s3VersionId string) {
-	datasetFile, ok := f.ByKey[s3Location.Key]
-	require.Truef(t, ok, "missing DatasetFile: bucket: %s, key: %s", s3Location.Bucket, s3Location.Key)
-	datasetFile.S3VersionID = s3VersionId
-}
-
-func (f *TestDatasetFiles) PutObjectInputs(bucket string) []*s3.PutObjectInput {
-	var putObjectInputs []*s3.PutObjectInput
-	for _, file := range f.Files {
-		putObjectInputs = append(putObjectInputs, &s3.PutObjectInput{
-			Bucket:        aws.String(bucket),
-			Key:           aws.String(file.s3key),
-			Body:          strings.NewReader(file.content),
-			ContentLength: aws.Int64(file.Size),
-		})
-	}
-	return putObjectInputs
-}
-
-func (f *TestDatasetFiles) DatasetFiles() []discover.DatasetFile {
-	var datasetFiles []discover.DatasetFile
-	for _, file := range f.Files {
-		datasetFiles = append(datasetFiles, file.DatasetFile)
-	}
-	return datasetFiles
-}
-
-func (f *TestDatasetFiles) DatasetFilesByPath() map[string]discover.DatasetFile {
-	dfByPath := map[string]discover.DatasetFile{}
-	for p, f := range f.ByPath {
-		dfByPath[p] = f.DatasetFile
-	}
-	return dfByPath
-}
-
-func TestNewTestDatasetFiles(t *testing.T) {
-	testDatasetFiles := NewTestDatasetFiles(models.Dataset{
-		ID:        1,
-		VersionID: 2,
-	}, 1).WithFakeS3VersionsIDs()
-
-	files := testDatasetFiles.Files
-
-	for i := 0; i < len(files); i++ {
-		byPath := testDatasetFiles.ByPath[files[i].Path]
-		assert.Same(t, &files[i], byPath)
-		assert.NotEmpty(t, files[i].S3VersionID)
-		assert.Equal(t, files[i].S3VersionID, byPath.S3VersionID)
 	}
 }
 

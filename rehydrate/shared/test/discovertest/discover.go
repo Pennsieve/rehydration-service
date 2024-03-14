@@ -2,12 +2,17 @@ package discovertest
 
 import (
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve/models/authentication"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve/models/discover"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/require"
 	"net/http"
+	"strings"
+	"testing"
 )
 
 var defaultCognitoConfig = authentication.CognitoConfig{
@@ -86,7 +91,7 @@ func GetDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, expectedD
 	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
 }
 
-func GetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]discover.DatasetFile) *test.HandlerFuncBuilder {
+func GetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string, expectedDatasetFileByPath map[string]*TestDatasetFile) *test.HandlerFuncBuilder {
 	pattern := GetDatasetFileByVersionPath(dataset)
 	selectorFunc := func(r *http.Request) (int, any) {
 		pathQueryParam := r.URL.Query().Get("path")
@@ -95,8 +100,9 @@ func GetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucke
 			return 0, nil
 		}
 		responseModel := discover.GetDatasetFileByVersionResponse{
-			Name:        "test dataset",
-			Path:        datasetFile.Path,
+			Name: "test dataset",
+			// In these responses, the path is actually the key (so it includes the dataset id as the first component)
+			Path:        datasetFile.s3key,
 			Size:        datasetFile.Size,
 			FileType:    datasetFile.FileType,
 			Uri:         fmt.Sprintf("s3://%s/%d/%s", expectedBucket, dataset.ID, datasetFile.Path),
@@ -147,4 +153,89 @@ func ErrorGetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expected
 		return http.StatusOK, responseModel
 	}
 	return test.NewHandlerFuncBuilder(pattern).WithSelectorFunc(selectorFunc)
+}
+
+type TestDatasetFile struct {
+	discover.DatasetFile
+	content string
+	s3key   string
+}
+
+type TestDatasetFiles struct {
+	Files  []TestDatasetFile
+	ByPath map[string]*TestDatasetFile
+	ByKey  map[string]*TestDatasetFile
+}
+
+func NewTestDatasetFiles(dataset models.Dataset, count int) *TestDatasetFiles {
+	datasetFiles := make([]TestDatasetFile, count)
+	datasetFilesByPath := map[string]*TestDatasetFile{}
+	datasetFilesByKey := map[string]*TestDatasetFile{}
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("file%d.txt", i)
+		path := fmt.Sprintf("files/dir%d/%s", i, name)
+		content := fmt.Sprintf("content of %s\n", name)
+		datasetFile := TestDatasetFile{
+			DatasetFile: discover.DatasetFile{
+				Name:     name,
+				Path:     path,
+				FileType: "TEXT",
+				Size:     int64(len([]byte(content))),
+			},
+			content: content,
+			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
+		}
+		datasetFiles[i] = datasetFile
+		datasetFilesByPath[datasetFile.Path] = &datasetFiles[i]
+		datasetFilesByKey[datasetFile.s3key] = &datasetFiles[i]
+	}
+
+	return &TestDatasetFiles{
+		Files:  datasetFiles,
+		ByPath: datasetFilesByPath,
+		ByKey:  datasetFilesByKey,
+	}
+}
+
+func (f *TestDatasetFiles) WithFakeS3VersionsIDs() *TestDatasetFiles {
+	for i := range f.Files {
+		file := &f.Files[i]
+		file.S3VersionID = uuid.NewString()
+	}
+	return f
+}
+
+func (f *TestDatasetFiles) SetS3VersionID(t *testing.T, s3Location test.S3Location, s3VersionId string) {
+	datasetFile, ok := f.ByKey[s3Location.Key]
+	require.Truef(t, ok, "missing DatasetFile: bucket: %s, key: %s", s3Location.Bucket, s3Location.Key)
+	datasetFile.S3VersionID = s3VersionId
+}
+
+func (f *TestDatasetFiles) PutObjectInputs(bucket string) []*s3.PutObjectInput {
+	var putObjectInputs []*s3.PutObjectInput
+	for _, file := range f.Files {
+		putObjectInputs = append(putObjectInputs, &s3.PutObjectInput{
+			Bucket:        aws.String(bucket),
+			Key:           aws.String(file.s3key),
+			Body:          strings.NewReader(file.content),
+			ContentLength: aws.Int64(file.Size),
+		})
+	}
+	return putObjectInputs
+}
+
+func (f *TestDatasetFiles) DatasetFiles() []discover.DatasetFile {
+	var datasetFiles []discover.DatasetFile
+	for _, file := range f.Files {
+		datasetFiles = append(datasetFiles, file.DatasetFile)
+	}
+	return datasetFiles
+}
+
+func (f *TestDatasetFiles) DatasetFilesByPath() map[string]discover.DatasetFile {
+	dfByPath := map[string]discover.DatasetFile{}
+	for p, f := range f.ByPath {
+		dfByPath[p] = f.DatasetFile
+	}
+	return dfByPath
 }

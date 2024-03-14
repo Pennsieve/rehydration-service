@@ -81,5 +81,5 @@ func errorResponse(statusCode int, err error, lambdaRequest events.APIGatewayV2H
 		StatusCode: statusCode,
 		Headers:    map[string]string{"Content-Type": "application/json"},
 		Body:       errorBody(err, lambdaRequest),
-	}, err
+	}, nil
 }

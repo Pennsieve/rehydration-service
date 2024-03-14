@@ -1,22 +1,25 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"strconv"
+	"path"
 )
 
-func CreateDestinationKey(datasetId int32, versionId int32, path string) string {
-	return fmt.Sprintf("rehydrated/%s/%s/%s",
-		strconv.Itoa(int(datasetId)), strconv.Itoa(int(versionId)), path)
+func RehydrationLocation(destinationBucket string, datasetID, datasetVersionID int) string {
+	return fmt.Sprintf("s3://%s", path.Join(destinationBucket, DestinationKeyPrefix(datasetID, datasetVersionID)))
+}
+func DestinationKeyPrefix(datasetID, datasetVersionID int) string {
+	return fmt.Sprintf("rehydrated/%d/%d/", datasetID, datasetVersionID)
+}
+func CreateDestinationKey(datasetId int, versionId int, filePath string) string {
+	return path.Join(DestinationKeyPrefix(datasetId, versionId), filePath)
 }
 
 func CreateDestinationBucket(datasetUri string) (string, error) {
 	u, err := url.Parse(datasetUri)
 	if err != nil {
-		return "", errors.New("error creating destination bucket")
+		return "", fmt.Errorf("error parsing destination bucket URI [%s]: %w", datasetUri, err)
 	}
 
 	return u.Host, nil
@@ -29,9 +32,9 @@ func CreateVersionedSource(uri string, version string) string {
 }
 
 func GetApiHost(env string) string {
-	if os.Getenv("ENV") == "dev" {
-		return "https://api.pennsieve.net"
-	} else {
+	if env == "prod" {
 		return "https://api.pennsieve.io"
+
 	}
+	return "https://api.pennsieve.net"
 }

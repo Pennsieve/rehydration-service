@@ -1,4 +1,4 @@
-.PHONY: help clean test package publish test-ci
+.PHONY: help go-get local-services test test-ci clean docker-clean package publish
 
 LAMBDA_BUCKET ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR   ?= "$(shell pwd)"
@@ -20,15 +20,35 @@ go-get:
 	cd $(WORKING_DIR)/rehydrate/fargate; \
 		go get github.com/pennsieve/rehydration-service/fargate
 
-test-ci:
-	@echo ""
+# Run go mod tidy on modules
+tidy:
+	cd ${WORKING_DIR}/lambda/service; go mod tidy
+	cd ${WORKING_DIR}/rehydrate/fargate; go mod tidy
+	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
+
+# Start the local versions of docker services
+local-services: docker-clean
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local minio-local
+
+# Run tests locally
+test: local-services
+	./run-tests.sh test-common.env test-local.env
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
+
+# Run dockerized tests (used on Jenkins)
+test-ci: docker-clean
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
+
+clean: docker-clean
+	rm -fr $(LAMBDA_BIN)
 
 # Spin down active docker containers.
-docker-clean:		
-	@echo ""
+docker-clean:
+	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
+	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
-clean:
-	rm -fr $(LAMBDA_BIN)
 
 package:
 	@echo ""

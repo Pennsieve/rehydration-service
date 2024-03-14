@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local
+    restart: always
+    ports:
+      - "8000:8000"
+  minio-local:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - test-common.env # contains root creds for minio
+    command: server --console-address ":9001" /data

@@ -5,7 +5,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
   function_name    = "${var.environment_name}-${var.service_name}-fargate-trigger-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   reserved_concurrent_executions = 1 // don't allow concurrent lambda's
   handler          = "bootstrap"
-  runtime          = "provided.al2"
+  runtime          = "provided.al2023"
   architectures    = ["arm64"]
   role             = aws_iam_role.rehydration_lambda_role.arn
   timeout          = 30
@@ -28,6 +28,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
       REGION = var.aws_region,
       LOG_LEVEL = "info",
       TASK_DEF_CONTAINER_NAME = var.tier,
+      FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME = aws_dynamodb_table.idempotency_table.name,
     }
   }
 }

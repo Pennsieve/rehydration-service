@@ -73,7 +73,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 	// sort parts (required for complete method
 	sort.Slice(parts, func(i, j int) bool {
-		return parts[i].PartNumber < parts[j].PartNumber
+		return *(parts[i].PartNumber) < *(parts[j].PartNumber)
 	})
 
 	//create struct for completing the upload
@@ -124,7 +124,7 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 			CopySource:      &copySource,
 			CopySourceRange: &copySourceRange,
 			Key:             &destKey,
-			PartNumber:      partNumber,
+			PartNumber:      &partNumber,
 			UploadId:        &uploadId,
 		}
 		partNumber++
@@ -143,7 +143,7 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 	workerFailed := false
 	for w := 1; w <= nrWorkers; w++ {
 		copyWg.Add(1)
-		logger.Info("starting upload-part worker", "worker", w)
+		logger.Debug("starting upload-part worker", "worker", w)
 		w := int32(w)
 		go func() {
 			err := worker(ctx, svc, &copyWg, w, partWalker, results, logger)
@@ -171,7 +171,7 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 		}
 	}
 
-	logger.Info("finished checking status of workers")
+	logger.Debug("finished checking status of workers")
 }
 
 // aggregateResult grabs the e-tags from results channel and aggregates in array
@@ -191,7 +191,7 @@ func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId in
 	// Close worker after it completes.
 	// This happens when the items channel closes.
 	defer func() {
-		logger.Info("closing UploadPart Worker", "worker", workerId)
+		logger.Debug("closing UploadPart Worker", "worker", workerId)
 		wg.Done()
 	}()
 
@@ -215,7 +215,7 @@ func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId in
 
 			results <- cPart
 
-			logger.Info("successfully upload part", "partNumber", partInput.PartNumber, "uploadId", *partInput.UploadId)
+			logger.Debug("successfully uploaded part", "partNumber", partInput.PartNumber, "uploadId", *partInput.UploadId)
 		}
 
 	}

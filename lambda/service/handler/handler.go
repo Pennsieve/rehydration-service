@@ -2,110 +2,84 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/pennsieve/rehydration-service/shared/logging"
-	"log/slog"
-	"os"
-	"strconv"
-	"strings"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ecs"
-	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/pennsieve/rehydration-service/service/ecs"
+	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
-	"github.com/pennsieve/rehydration-service/service/runner"
+	"github.com/pennsieve/rehydration-service/service/request"
+	"github.com/pennsieve/rehydration-service/shared/awsconfig"
+	"github.com/pennsieve/rehydration-service/shared/logging"
+	"log/slog"
+	"net/http"
 )
 
 var logger = logging.Default
+var AWSConfigFactory = awsconfig.NewFactory()
 
-func RehydrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	handlerName := "RehydrationServiceHandler"
-	if lc, ok := lambdacontext.FromContext(ctx); ok {
-		logger = logger.With(slog.String("awsRequestID", lc.AwsRequestID))
-	}
-
-	var dataset models.Dataset
-	if err := json.Unmarshal([]byte(request.Body), &dataset); err != nil {
-		logger.Error("json.Unmarshal() error", "error", err)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrUnmarshaling
-	}
-	logger = logger.With(slog.Any("datasetID", dataset.ID), slog.Any("datasetVersionID", dataset.VersionID))
-
-	// Get from SSM
-	TaskDefinitionArn := os.Getenv("TASK_DEF_ARN")
-	subIdStr := os.Getenv("SUBNET_IDS")
-	SubNetIds := strings.Split(subIdStr, ",")
-	cluster := os.Getenv("CLUSTER_ARN")
-	SecurityGroup := os.Getenv("SECURITY_GROUP")
-	envValue := os.Getenv("ENV")
-	TaskDefContainerName := os.Getenv("TASK_DEF_CONTAINER_NAME")
-
-	cfg, err := config.LoadDefaultConfig(ctx)
+func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	taskConfig, err := models.TaskConfigFromEnvironment()
 	if err != nil {
-		logger.Error("config.LoadDefaultConfig() error", "error", err)
-		os.Exit(1)
+		logger.Error("error getting ECS task configuration from environment variables", "error", err)
+		return errorResponse(500, err, lambdaRequest)
 	}
 
-	client := ecs.NewFromConfig(cfg)
-	logger.Info("Initiating new Rehydrate Fargate Task.")
-	datasetIDKey := "DATASET_ID"
-	datasetIDValue := strconv.Itoa(int(dataset.ID))
-	datasetVersionIDKey := "DATASET_VERSION_ID"
-	datasetVersionIDValue := strconv.Itoa(int(dataset.VersionID))
-	envKey := "ENV"
-
-	runTaskIn := &ecs.RunTaskInput{
-		TaskDefinition: aws.String(TaskDefinitionArn),
-		Cluster:        aws.String(cluster),
-		NetworkConfiguration: &types.NetworkConfiguration{
-			AwsvpcConfiguration: &types.AwsVpcConfiguration{
-				Subnets:        SubNetIds,
-				SecurityGroups: []string{SecurityGroup},
-				AssignPublicIp: types.AssignPublicIpEnabled,
-			},
-		},
-		Overrides: &types.TaskOverride{
-			ContainerOverrides: []types.ContainerOverride{
-				{
-					Name: &TaskDefContainerName,
-					Environment: []types.KeyValuePair{
-						{
-							Name:  &datasetIDKey,
-							Value: &datasetIDValue,
-						},
-						{
-							Name:  &datasetVersionIDKey,
-							Value: &datasetVersionIDValue,
-						},
-						{
-							Name:  &envKey,
-							Value: &envValue,
-						},
-					},
-				},
-			},
-		},
-		LaunchType: types.LaunchTypeFargate,
+	awsConfig, err := AWSConfigFactory.Get(ctx)
+	if err != nil {
+		logger.Error("error getting AWS config", "error", err)
+		return errorResponse(500, err, lambdaRequest)
 	}
 
-	runner := runner.NewECSTaskRunner(client, runTaskIn)
-	if err := runner.Run(ctx); err != nil {
-		logger.Error("runner.Run() error", "error", err)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrRunningFargateTask
+	ecsHandler := ecs.NewHandler(*awsConfig, taskConfig)
+
+	rehydrationRequest, err := request.NewRehydrationRequest(lambdaRequest)
+	if err != nil {
+		logger.Error("error creating RehydrationRequest", "error", err)
+		var badRequest *request.BadRequestError
+		if errors.As(err, &badRequest) {
+			return errorResponse(http.StatusBadRequest, err, lambdaRequest)
+		}
+		return errorResponse(500, err, lambdaRequest)
 	}
 
+	idempotencyConfig := idempotency.Config{
+		AWSConfig:        *awsConfig,
+		IdempotencyTable: taskConfig.IdempotencyTableName,
+	}
+
+	handler, err := idempotency.NewHandler(idempotencyConfig, rehydrationRequest, ecsHandler)
+	if err != nil {
+		rehydrationRequest.Logger.Error("error creating idempotency handler", "error", err)
+		return errorResponse(500, err, lambdaRequest)
+	}
+
+	out, err := handler.Handle(ctx)
+	if err != nil {
+		rehydrationRequest.Logger.Error("error handling RehydrationRequest", "error", err)
+		return errorResponse(500, err, lambdaRequest)
+	}
+	respBody, err := out.String()
+	if err != nil {
+		rehydrationRequest.Logger.Error("unable to marshall successful response", slog.Any("error", err))
+		return errorResponse(500, err, lambdaRequest)
+	}
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 202,
-		Body:       fmt.Sprintf("%s: Fargate task accepted", handlerName),
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       respBody,
 	}, nil
+}
+
+func errorBody(err error, lambdaRequest events.APIGatewayV2HTTPRequest) string {
+	return fmt.Sprintf(`{"requestID": %q, "logStream": %q, "message": %q}`, lambdaRequest.RequestContext.RequestID, lambdacontext.LogStreamName, err)
+}
+
+func errorResponse(statusCode int, err error, lambdaRequest events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: statusCode,
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       errorBody(err, lambdaRequest),
+	}, err
 }

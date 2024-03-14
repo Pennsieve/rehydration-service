@@ -2,142 +2,100 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/pennsieve/rehydration-service/fargate/config"
+	"github.com/pennsieve/rehydration-service/shared/awsconfig"
+	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"log/slog"
 	"os"
-	"strconv"
-
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
-	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
 
 const ThresholdSize = int64(100 * 1024 * 1024)
 
-var logger = logging.Default
+var awsConfigFactory = awsconfig.NewFactory()
 
 func main() {
+	// The os.Exit calls below make this function untestable. Reason for the os.Exit is so
+	// that the task shows up as failed in the hope that this will surface errors quickly. In the
+	// AWS console, datadog, notifications, etc.
+	//
+	// All the logic is in RehydrationTaskHandler. Everything proceeding that should just be setup.
 	ctx := context.Background()
-
-	datasetId, err := strconv.Atoi(os.Getenv("DATASET_ID"))
+	taskConfig, err := initConfig(ctx)
 	if err != nil {
-		logger.Error("error converting datasetId to int",
-			"datasetID", os.Getenv("DATASET_ID"), "error", err)
+		logging.Default.Error("error initializing config", err)
+		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
-	versionId, err := strconv.Atoi(os.Getenv("DATASET_VERSION_ID"))
+	rehydrator, idempotencyStore, err := taskHandlerDependencies(taskConfig)
 	if err != nil {
-		logger.Error("error converting datasetVersionId to int",
-			"datasetVersionID", os.Getenv("DATASET_VERSION_ID"), "error", err)
-		os.Exit(1)
-	}
-
-	logger = logger.With(slog.Int("datasetID", datasetId), slog.Int("datasetVersionID", versionId))
-	logger.Info("Running rehydrate task")
-
-	pennsieveClient := pennsieve.NewClient(pennsieve.APIParams{ApiHost: utils.GetApiHost(os.Getenv("ENV"))})
-	datasetByVersionResponse, err := pennsieveClient.Discover.GetDatasetByVersion(ctx, int32(datasetId), int32(versionId))
-	if err != nil {
-		logger.Error("error retrieving dataset by version", "error", err)
+		taskConfig.Logger.Error("error creating task dependencies: %v", err)
+		taskConfig.Logger.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
 
-	datasetMetadataByVersionResponse, err := pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, int32(datasetId), int32(versionId))
-	if err != nil {
-		logger.Error("error retrieving dataset metadata by version", "error", err)
+	taskConfig.Logger.Info("starting rehydration task")
+	if err := RehydrationTaskHandler(ctx, rehydrator, idempotencyStore); err != nil {
+		taskConfig.Logger.Error("error rehydrating dataset: %v", err)
 		os.Exit(1)
 	}
+	taskConfig.Logger.Info("rehydration complete")
+}
 
-	// Initializing environment
-	cfg, err := config.LoadDefaultConfig(context.Background())
+func RehydrationTaskHandler(ctx context.Context, rehydrator *DatasetRehydrator, idempotencyStore idempotency.Store) error {
+	var errs []error
+	results, err := rehydrator.rehydrate(ctx)
 	if err != nil {
-		logger.Error("error loading default AWS config", "error", err)
-		os.Exit(1)
-	}
-
-	processor := NewRehydrator(s3.NewFromConfig(cfg), ThresholdSize)
-
-	numberOfRehydrations := len(datasetMetadataByVersionResponse.Files)
-	rehydrations := make(chan *Rehydration, numberOfRehydrations)
-	results := make(chan WorkerResult, numberOfRehydrations)
-
-	logger.Info("Starting Rehydration process")
-	// create workers
-	NumConcurrentWorkers := 20
-	for i := 1; i <= NumConcurrentWorkers; i++ {
-		go worker(ctx, i, rehydrations, results, processor)
-	}
-
-	// create work
-	for _, j := range datasetMetadataByVersionResponse.Files {
-		destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionResponse.Uri)
-		if err != nil {
-			logger.Error("error creating destination bucket uri", "error", err)
-			os.Exit(1)
+		errs = append(errs, fmt.Errorf("error rehydrating dataset: %w", err))
+		if deleteErr := delete(ctx, idempotencyStore, rehydrator.dataset); deleteErr != nil {
+			errs = append(errs, fmt.Errorf("error deleting idempotency record: %w", deleteErr))
 		}
-		datasetFileByVersionResponse, err := pennsieveClient.Discover.GetDatasetFileByVersion(
-			ctx, int32(datasetId), int32(versionId), j.Path)
-		if err != nil {
-			logger.Error("error retrieving dataset file by version", "error", err)
-			os.Exit(1)
-		}
-
-		rehydrations <- NewRehydration(
-			SourceObject{
-				DatasetUri: datasetFileByVersionResponse.Uri,
-				Size:       j.Size,
-				Name:       j.Name,
-				VersionId:  datasetFileByVersionResponse.S3VersionID,
-				Path:       j.Path},
-			DestinationObject{
-				Bucket: destinationBucket,
-				Key: utils.CreateDestinationKey(datasetByVersionResponse.ID,
-					datasetByVersionResponse.Version,
-					j.Path),
-			})
+		//TODO update per-user DynamoDB with error
+		return errors.Join(errs...)
 	}
-	close(rehydrations)
 
-	// wait for the done signal
-	for j := 1; j <= numberOfRehydrations; j++ {
-		result := <-results
+	for _, result := range results.FileResults {
 		if result.Error != nil {
-			logger.Error("error rehydrating file", result.LogGroups())
-		} else {
-			logger.Info("rehydrated file", result.LogGroups())
+			errs = append(errs, fmt.Errorf("error rehydrating file %s: %w", result.Rehydration.Src.GetVersionedUri(), result.Error))
 		}
 	}
 
-	logger.Info("Rehydration complete")
-}
-
-type WorkerResult struct {
-	Worker      int
-	Rehydration *Rehydration
-	Error       error
-}
-
-func (wr *WorkerResult) LogGroups() []any {
-	if wr.Error != nil {
-		return wr.Rehydration.LogGroups(slog.Any("error", wr.Error))
-	}
-	return wr.Rehydration.LogGroups()
-}
-
-// processes rehydrations
-func worker(ctx context.Context, w int, rehydrations <-chan *Rehydration, results chan<- WorkerResult, processor ObjectProcessor) {
-	for r := range rehydrations {
-		result := WorkerResult{
-			Worker:      w,
-			Rehydration: r,
+	if len(errs) > 0 {
+		if deleteErr := delete(ctx, idempotencyStore, rehydrator.dataset); deleteErr != nil {
+			errs = append(errs, fmt.Errorf("error deleting idempotency record: %w", deleteErr))
 		}
-		logger.Info("processing on worker", r.LogGroups(slog.Int("worker", w))...)
-		err := processor.Copy(ctx, r.Src, r.Dest)
-		if err != nil {
-			result.Error = err
-		}
-		results <- result
-
+		//TODO update per-user DynamoDB with error
+		return errors.Join(errs...)
 	}
+	if err := success(ctx, idempotencyStore, rehydrator.dataset, results.Location); err != nil {
+		// logging this here and not returning it because we don't want to fail the whole rehydration
+		// because of this. But maybe we should?
+		rehydrator.logger.Error("error updating idempotency record for success", slog.Any("error", err))
+	}
+	//TODO update per-user DynamoDB with success
+	return nil
+}
+
+func initConfig(ctx context.Context) (*config.Config, error) {
+	awsConfig, err := awsConfigFactory.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting AWS config: %w", err)
+	}
+	configEnv, err := config.LookupEnv()
+	if err != nil {
+		return nil, fmt.Errorf("error getting taskConfig environment variables: %w", err)
+	}
+	taskConfig := config.NewConfig(*awsConfig, configEnv)
+	return taskConfig, nil
+}
+
+func taskHandlerDependencies(taskConfig *config.Config) (*DatasetRehydrator, idempotency.Store, error) {
+	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
+	idempotencyStore, err := taskConfig.IdempotencyStore()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating idempotencyStore: %w", err)
+	}
+	return rehydrator, idempotencyStore, nil
 }

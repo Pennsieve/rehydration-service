@@ -77,12 +77,12 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 				Size:       datasetFileByVersionResponse.Size,
 				Name:       datasetFileByVersionResponse.Name,
 				VersionId:  datasetFileByVersionResponse.S3VersionID,
-				Path:       datasetFileByVersionResponse.Path},
+				Path:       j.Path},
 			DestinationObject{
 				Bucket: destinationBucket,
 				Key: utils.CreateDestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
-					datasetFileByVersionResponse.Path),
+					j.Path),
 			}))
 	}
 	// Only submit rehydrations once we know there are no GetDatasetFileByVersion errors

@@ -24,7 +24,7 @@ func TestRehydrate(t *testing.T) {
 	dataset := taskEnv.Dataset
 
 	datasetFileCount := 50
-	testDatasetFiles := NewTestDatasetFiles(*dataset, datasetFileCount)
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, datasetFileCount)
 
 	for testName, testParams := range map[string]struct {
 		thresholdSize int64
@@ -49,7 +49,7 @@ func TestRehydrate(t *testing.T) {
 			mockDiscover := discovertest.NewServerFixture(t, nil,
 				discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 				discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-				discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+				discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 			)
 			defer mockDiscover.Teardown()
 
@@ -88,7 +88,7 @@ func TestRehydrate_S3Errors(t *testing.T) {
 	dataset := taskEnv.Dataset
 
 	testDatasetFileCount := 1000
-	testDatasetFiles := NewTestDatasetFiles(*dataset, testDatasetFileCount).WithFakeS3VersionsIDs()
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, testDatasetFileCount).WithFakeS3VersionsIDs()
 	var copyFailPaths []string
 	for i, file := range testDatasetFiles.Files {
 		// S3 Failure every 10th file
@@ -101,7 +101,7 @@ func TestRehydrate_S3Errors(t *testing.T) {
 	mockDiscover := discovertest.NewServerFixture(t, nil,
 		discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 		discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath()),
+		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 	)
 
 	defer mockDiscover.Teardown()
@@ -137,7 +137,7 @@ func TestRehydrate_DiscoverErrors(t *testing.T) {
 	taskEnv := newTestConfigEnv()
 	dataset := taskEnv.Dataset
 
-	testDatasetFiles := NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
+	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
 	pathsToFail := map[string]bool{testDatasetFiles.Files[24].Path: true}
 
 	for testName, testParams := range map[string]struct {

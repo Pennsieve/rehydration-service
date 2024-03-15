@@ -12,6 +12,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"net/http"
 )
@@ -44,6 +45,8 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		return errorResponse(500, err, lambdaRequest)
 	}
 
+	trackingStore := tracking.NewStore(*awsConfig, rehydrationRequest.Logger, taskConfig.TrackingTableName)
+
 	idempotencyConfig := idempotency.Config{
 		AWSConfig:        *awsConfig,
 		IdempotencyTable: taskConfig.IdempotencyTableName,
@@ -52,14 +55,29 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	handler, err := idempotency.NewHandler(idempotencyConfig, rehydrationRequest, ecsHandler)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating idempotency handler", "error", err)
+		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
 		return errorResponse(500, err, lambdaRequest)
 	}
 
 	out, err := handler.Handle(ctx)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error handling RehydrationRequest", "error", err)
+		// Maybe we should be writing failed to the tracking table in this case?
+		// But now we are only using the "failed" state for a task that started okay, but failed along the way.
+		// Here all we know is that the task failed to start, not that the task itself failed.
+		// Maybe we should add a new status for this.
+		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
 		return errorResponse(500, err, lambdaRequest)
 	}
+
+	completionLogAttrs := []any{slog.String("fargateTaskARN", out.TaskARN)}
+	if len(out.RehydrationLocation) != 0 {
+		// this will only be true if this request is for an already completed, non-expired rehydration
+		completionLogAttrs = append(completionLogAttrs, slog.String("rehydrationLocation", out.RehydrationLocation))
+	}
+	rehydrationRequest.Logger.Info("request complete", completionLogAttrs...)
+	rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)
+
 	respBody, err := out.String()
 	if err != nil {
 		rehydrationRequest.Logger.Error("unable to marshall successful response", slog.Any("error", err))

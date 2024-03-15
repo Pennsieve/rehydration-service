@@ -7,17 +7,20 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/service/handler"
 	"github.com/pennsieve/rehydration-service/service/models"
 	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 )
 
 var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
@@ -37,61 +40,105 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	}
 	expectedTaskARN := "arn:aws:ecs:test-task-arn"
 
-	fixture := NewFixtureBuilder(t).withECSRequestAssertionFunc(request).withExpectedTaskARN(expectedTaskARN).withIdempotencyTable().build()
+	fixture := NewFixtureBuilder(t).withECSRequestAssertionFunc(request).withExpectedTaskARN(expectedTaskARN).withIdempotencyTable().withTrackingTable().build()
 	defer fixture.teardown()
 
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
 	ctx := context.Background()
 	expectedStatusCode := 202
+	beforeRequest := time.Now()
 	response, err := handler.RehydrationServiceHandler(ctx, lambdaRequest)
 	require.NoError(t, err)
+	afterRequest := time.Now()
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	assert.Contains(t, response.Body, expectedTaskARN)
 
-	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
-	require.Len(t, scanned, 1)
-	record, err := sharedidempotency.FromItem(scanned[0])
+	idempotencyItems := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
+	require.Len(t, idempotencyItems, 1)
+	record, err := sharedidempotency.FromItem(idempotencyItems[0])
 	require.NoError(t, err)
 	assert.Equal(t, sharedidempotency.RecordID(request.ID, request.VersionID), record.ID)
 	assert.Equal(t, sharedidempotency.InProgress, record.Status)
 	assert.Empty(t, record.RehydrationLocation)
 	assert.Equal(t, expectedTaskARN, record.FargateTaskARN)
+
+	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
+	require.Len(t, trackingItems, 1)
+	entry, err := tracking.FromItem(trackingItems[0])
+	require.NoError(t, err)
+	assert.Equal(t, request.Dataset.DatasetVersion(), entry.DatasetVersion)
+	assert.Equal(t, tracking.InProgress, entry.RehydrationStatus)
+	assert.Equal(t, request.User.Name, entry.UserName)
+	assert.Equal(t, request.User.Email, entry.UserEmail)
+	assert.Equal(t, expectedTaskARN, entry.FargateTaskARN)
+	assert.False(t, beforeRequest.After(entry.RequestDate))
+	assert.False(t, afterRequest.Before(entry.RequestDate))
+	assert.Nil(t, entry.EmailSentDate)
+	// Don't know the expected value of this without access to the RehydrationRequest object.
+	assert.NotEmpty(t, entry.ID)
+
 }
 
 func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	inProgress := sharedidempotency.Record{
-		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              sharedidempotency.InProgress,
-		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
+		ID:             sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		Status:         sharedidempotency.InProgress,
+		FargateTaskARN: "arn:aws:ecs:test:test:test:test",
 	}
-	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(inProgress).build()
+	existingInProgressTracking := tracking.NewEntry(uuid.NewString(), dataset, user, uuid.NewString(), uuid.NewString(), inProgress.FargateTaskARN)
+	fixture := NewFixtureBuilder(t).withIdempotencyTable(inProgress).withTrackingTable(*existingInProgressTracking).build()
 	defer fixture.teardown()
 
-	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
 	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
-
-	expectedStatusCode := 500
-	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
+	ctx := context.Background()
+	expectedStatusCode := 202
+	beforeRequest := time.Now()
+	response, err := handler.RehydrationServiceHandler(ctx, lambdaRequest)
 	require.NoError(t, err)
+	afterRequest := time.Now()
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
-	require.Contains(t, response.Body, "in progress")
+	require.Contains(t, response.Body, inProgress.FargateTaskARN)
 
-	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
+	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, inProgress, *record)
+
+	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
+	assert.Len(t, trackingItems, 2)
+	for _, i := range trackingItems {
+		entry, err := tracking.FromItem(i)
+		require.NoError(t, err)
+		assert.Equal(t, dataset.DatasetVersion(), entry.DatasetVersion)
+		assert.Equal(t, tracking.InProgress, entry.RehydrationStatus)
+		assert.Equal(t, user.Name, entry.UserName)
+		assert.Equal(t, user.Email, entry.UserEmail)
+		assert.Equal(t, existingInProgressTracking.FargateTaskARN, entry.FargateTaskARN)
+		assert.Nil(t, entry.EmailSentDate)
+		if entry.ID == existingInProgressTracking.ID {
+			assert.Equal(t, existingInProgressTracking.RequestDate.Format(time.RFC3339Nano), entry.RequestDate.Format(time.RFC3339Nano))
+		} else {
+			// Don't know the expected value of this without access to the RehydrationRequest object.
+			assert.NotEmpty(t, entry.ID)
+			assert.False(t, beforeRequest.After(entry.RequestDate))
+			assert.False(t, afterRequest.Before(entry.RequestDate))
+		}
+
+	}
 }
+
+//TODO finish updating the tests below for tracking. Fiqure out why DynamoDB CreateTable sometimes fails only when running 'make test'
 
 func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
@@ -103,7 +150,7 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 		Status:              sharedidempotency.Expired,
 		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
 	}
-	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(expired).build()
+	fixture := NewFixtureBuilder(t).withIdempotencyTable(expired).build()
 	defer fixture.teardown()
 
 	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
@@ -137,7 +184,7 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 		Status:              sharedidempotency.Completed,
 		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
 	}
-	fixture := NewFixtureBuilder(t).withIdempotencyTable().withIdempotencyRecords(completed).build()
+	fixture := NewFixtureBuilder(t).withIdempotencyTable(completed).build()
 	defer fixture.teardown()
 
 	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
@@ -253,6 +300,7 @@ type Fixture struct {
 	mockECS2         test.HTTPTestFixture
 	dyDB             *test.DynamoDBFixture
 	idempotencyTable string
+	trackingTable    string
 }
 
 func (f *Fixture) teardown() {
@@ -271,6 +319,7 @@ type FixtureBuilder struct {
 	createTableInputs       []*dynamodb.CreateTableInput
 	putItemInputs           []*dynamodb.PutItemInput
 	idempotencyTableName    string
+	trackingTableName       string
 }
 
 func NewFixtureBuilder(t *testing.T) *FixtureBuilder {
@@ -317,8 +366,10 @@ func (b *FixtureBuilder) withECSRequestAssertionFunc(rehydrationReq models.Reque
 func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Request) map[string]any {
 	envValue, ok := os.LookupEnv(sharedmodels.ECSTaskEnvKey)
 	require.Truef(t, ok, "env variable %s is not set", sharedmodels.ECSTaskEnvKey)
-	idempotencyTableValue, ok := os.LookupEnv("FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME")
-	require.True(t, ok, "env variable FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME is not set")
+	idempotencyTableValue, ok := os.LookupEnv(sharedidempotency.TableNameKey)
+	require.True(t, ok, "env variable %s is not set", sharedidempotency.TableNameKey)
+	trackingTableValue, ok := os.LookupEnv(tracking.TableNameKey)
+	require.True(t, ok, "env variable %s is not set", tracking.TableNameKey)
 	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
 	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
 	return map[string]any{
@@ -328,7 +379,8 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 			map[string]any{"name": sharedmodels.ECSTaskDatasetVersionIDKey, "value": strconv.Itoa(rehydrationReq.Dataset.VersionID)},
 			map[string]any{"name": sharedmodels.ECSTaskUserNameKey, "value": rehydrationReq.User.Name},
 			map[string]any{"name": sharedmodels.ECSTaskUserEmailKey, "value": rehydrationReq.User.Email},
-			map[string]any{"name": "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME", "value": idempotencyTableValue}},
+			map[string]any{"name": sharedidempotency.TableNameKey, "value": idempotencyTableValue},
+			map[string]any{"name": tracking.TableNameKey, "value": trackingTableValue}},
 		"name": containerNameValue}
 }
 
@@ -338,23 +390,30 @@ func assertECSContainerOverridesEqual(t require.TestingT, expected map[string]an
 	return assert.Equal(t, expectedName, actualName) && assert.ElementsMatch(t, expectedEnv, actualEnv)
 }
 
-func (b *FixtureBuilder) withIdempotencyTable() *FixtureBuilder {
+func (b *FixtureBuilder) withIdempotencyTable(records ...sharedidempotency.Record) *FixtureBuilder {
 	table, ok := os.LookupEnv(sharedidempotency.TableNameKey)
 	if !ok || len(table) == 0 {
-		assert.FailNow(b.testingT, "idempotency table name missing from environment variables or empty", "env var name: %s", sharedidempotency.KeyAttrName)
+		assert.FailNow(b.testingT, "idempotency table name missing from environment variables or empty", "env var name: %s", sharedidempotency.TableNameKey)
 	}
 	b.idempotencyTableName = table
 	b.createTableInputs = append(b.createTableInputs, test.IdempotencyCreateTableInput(table, sharedidempotency.KeyAttrName))
-	return b
-}
-
-func (b *FixtureBuilder) withIdempotencyRecords(records ...sharedidempotency.Record) *FixtureBuilder {
-	if len(b.idempotencyTableName) == 0 {
-		assert.FailNow(b.testingT, "idempotencyTableName is empty; call withIdempotencyTable before calling this method")
-	}
 	for i := range records {
 		record := &records[i]
 		b.putItemInputs = append(b.putItemInputs, test.ItemersToPutItemInputs(b.testingT, b.idempotencyTableName, record)...)
+	}
+	return b
+}
+
+func (b *FixtureBuilder) withTrackingTable(entries ...tracking.Entry) *FixtureBuilder {
+	table, ok := os.LookupEnv(tracking.TableNameKey)
+	if !ok || len(table) == 0 {
+		assert.FailNow(b.testingT, "tracking table name missing from environment variables or empty", "env var name: %s", tracking.TableNameKey)
+	}
+	b.trackingTableName = table
+	b.createTableInputs = append(b.createTableInputs, test.TrackingCreateTableInput(table, tracking.IDAttrName))
+	for i := range entries {
+		entry := &entries[i]
+		b.putItemInputs = append(b.putItemInputs, test.ItemersToPutItemInputs(b.testingT, b.trackingTableName, entry)...)
 	}
 	return b
 }
@@ -380,5 +439,6 @@ func (b *FixtureBuilder) build() *Fixture {
 		mockECS2:         mockECS,
 		dyDB:             dyDB,
 		idempotencyTable: b.idempotencyTableName,
+		trackingTable:    b.trackingTableName,
 	}
 }

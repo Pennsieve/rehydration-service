@@ -9,9 +9,13 @@ import (
 	"time"
 )
 
+// RehydrationStatus indicates only the current status of the rehydration Fargate task
 type RehydrationStatus string
 
 const (
+	// Unknown is only for the situation where the Lambda handling the endpoint fails before it can start the
+	// Fargate task or determine if one is already started. It should be an abnormal status
+	Unknown    RehydrationStatus = "UNKNOWN"
 	InProgress RehydrationStatus = "IN_PROGRESS"
 	Completed  RehydrationStatus = "COMPLETED"
 	Failed     RehydrationStatus = "FAILED"
@@ -30,6 +34,8 @@ func RehydrationStatusFromString(s string) (RehydrationStatus, error) {
 	}
 }
 
+// IDAttrName and other attribute name constants below should match the values in the dynamodbav struct tags in Entry
+// and DatasetVersion structs.
 const IDAttrName = "id"
 const DatasetVersionAttrName = "datasetVersion"
 const UserNameAttrName = "userName"

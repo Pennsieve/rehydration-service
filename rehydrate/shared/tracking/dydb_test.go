@@ -147,6 +147,49 @@ func TestDyDBStore_NewFailedEntry(t *testing.T) {
 	assert.NotContains(t, actualItem, tracking.EmailSentDateAttrName)
 }
 
+func TestDyDBStore_NewUnknownEntry(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
+
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName))
+	defer dyDB.Teardown()
+
+	expectedID := uuid.NewString()
+	dataset := models.Dataset{
+		ID:        898,
+		VersionID: 7,
+	}
+	user := models.User{
+		Name:  "First Last",
+		Email: "last@example.com",
+	}
+	expectedLambdaLog := "/lambda/log/stream"
+	expectedAWSRequestID := "REQUEST-8765"
+	beforeRequest := time.Now()
+	err := store.NewUnknownEntry(ctx, expectedID, dataset, user, expectedLambdaLog, expectedAWSRequestID)
+	require.NoError(t, err)
+	afterRequest := time.Now()
+
+	items := dyDB.Scan(ctx, testTableName)
+	require.Len(t, items, 1)
+	actualItem := items[0]
+	AssertEqualAttributeValueString(t, expectedID, actualItem[tracking.IDAttrName])
+	AssertEqualAttributeValueString(t, dataset.DatasetVersion(), actualItem[tracking.DatasetVersionAttrName])
+	AssertEqualAttributeValueString(t, user.Name, actualItem[tracking.UserNameAttrName])
+	AssertEqualAttributeValueString(t, user.Email, actualItem[tracking.UserEmailAttrName])
+	AssertEqualAttributeValueString(t, expectedLambdaLog, actualItem[tracking.LambdaLogStreamAttrName])
+	AssertEqualAttributeValueString(t, expectedAWSRequestID, actualItem[tracking.AWSRequestIDAttrName])
+	assert.NotContains(t, actualItem, tracking.FargateTaskARNAttrName)
+	AssertEqualAttributeValueString(t, string(tracking.Unknown), actualItem[tracking.RehydrationStatusAttrName])
+	var requestDate time.Time
+	if assert.NoError(t, attributevalue.Unmarshal(actualItem[tracking.RequestDateAttrName], &requestDate)) {
+		assert.True(t, beforeRequest.Equal(requestDate) || beforeRequest.Before(requestDate))
+		assert.True(t, afterRequest.Equal(requestDate) || afterRequest.After(requestDate))
+	}
+	assert.NotContains(t, actualItem, tracking.EmailSentDateAttrName)
+}
+
 func TestDyDBStore_EmailSent(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)

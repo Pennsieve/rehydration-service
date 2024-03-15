@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ type ECSTaskConfig struct {
 	TaskDefContainerName string
 	Environment          string
 	IdempotencyTableName string
+	TrackingTableName    string
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
@@ -52,6 +54,10 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	trackingTable, err := nonEmptyFromEnvVar(tracking.TableNameKey)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ECSTaskConfig{
 		TaskDefinitionARN:    taskDefinitionArn,
@@ -61,6 +67,7 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		TaskDefContainerName: taskDefContainerName,
 		Environment:          envValue,
 		IdempotencyTableName: idempotencyTable,
+		TrackingTableName:    trackingTable,
 	}, nil
 }
 
@@ -115,6 +122,10 @@ func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmo
 						{
 							Name:  aws.String(idempotency.TableNameKey),
 							Value: aws.String(t.IdempotencyTableName),
+						},
+						{
+							Name:  aws.String(tracking.TableNameKey),
+							Value: aws.String(t.TrackingTableName),
 						},
 					},
 				},

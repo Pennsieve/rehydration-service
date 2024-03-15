@@ -41,14 +41,20 @@ const RehydrationStatusAttrName = "rehydrationStatus"
 const EmailSentDateAttrName = "emailSentDate"
 const FargateTaskARNAttrName = "fargateTaskARN"
 
+// DatasetVersionIndex represents a Global Secondary Index to the Entry table.
+// The partition key of this index is DatasetVersion so that when a rehydration Fargate
+// task completes it can look up all the users that requested that DatasetVersion and
+// send an email and update the main Entry item with an email sent date and new RehydrationStatus.
+// The id and user's name and email are included in this index so that we can do this without first looking up the full
+// Entry from the table.
 type DatasetVersionIndex struct {
+	ID                string            `dynamodbav:"id"`
 	DatasetVersion    string            `dynamodbav:"datasetVersion"`
 	UserName          string            `dynamodbav:"userName"`
 	UserEmail         string            `dynamodbav:"userEmail"`
 	RehydrationStatus RehydrationStatus `dynamodbav:"rehydrationStatus"`
 }
 type Entry struct {
-	ID string `dynamodbav:"id"`
 	DatasetVersionIndex
 	LambdaLogStream string    `dynamodbav:"lambdaLogStream"`
 	AWSRequestID    string    `dynamodbav:"awsRequestId"`
@@ -64,8 +70,8 @@ type Entry struct {
 func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) *Entry {
 	requestDate := time.Now()
 	return &Entry{
-		ID: id,
 		DatasetVersionIndex: DatasetVersionIndex{
+			ID:                id,
 			DatasetVersion:    dataset.DatasetVersion(),
 			UserName:          user.Name,
 			UserEmail:         user.Email,

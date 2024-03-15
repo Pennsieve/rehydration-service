@@ -37,8 +37,8 @@ func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyD
 func (s *DyDBStore) NewInProgressEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) error {
 	requestDate := time.Now()
 	inProgress := &Entry{
-		ID: id,
 		DatasetVersionIndex: DatasetVersionIndex{
+			ID:                id,
 			DatasetVersion:    dataset.DatasetVersion(),
 			UserName:          user.Name,
 			UserEmail:         user.Email,
@@ -55,8 +55,8 @@ func (s *DyDBStore) NewInProgressEntry(ctx context.Context, id string, dataset m
 func (s *DyDBStore) NewFailedEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID string) error {
 	requestDate := time.Now()
 	inProgress := &Entry{
-		ID: id,
 		DatasetVersionIndex: DatasetVersionIndex{
+			ID:                id,
 			DatasetVersion:    dataset.DatasetVersion(),
 			UserName:          user.Name,
 			UserEmail:         user.Email,
@@ -116,7 +116,7 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time
 	return nil
 }
 
-func (s *DyDBStore) GetDatasetVersionIndex(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error) {
+func (s *DyDBStore) QueryDatasetVersionIndex(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error) {
 	var indexEntries []DatasetVersionIndex
 	var errs []error
 	datasetVersionTerm := ":datasetVersion"
@@ -133,7 +133,7 @@ func (s *DyDBStore) GetDatasetVersionIndex(ctx context.Context, dataset models.D
 	}
 	queryOut, err := s.client.Query(ctx, queryIn)
 	if err != nil {
-		return nil, fmt.Errorf("error getting DatasetVersionIndex: %w", err)
+		return nil, fmt.Errorf("error querying DatasetVersionIndex: %w", err)
 	}
 	for _, i := range queryOut.Items {
 		if indexEntry, err := DatasetVersionIndexFromItem(i); err == nil {

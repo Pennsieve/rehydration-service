@@ -11,5 +11,5 @@ type Store interface {
 	NewInProgressEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) error
 	NewFailedEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID string) error
 	EmailSent(ctx context.Context, id string, emailSentDate time.Time, status RehydrationStatus) error
-	GetDatasetVersionIndex(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error)
+	QueryDatasetVersionIndex(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error)
 }

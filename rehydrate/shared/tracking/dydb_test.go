@@ -38,8 +38,8 @@ func TestDyDBStore_PutEntry(t *testing.T) {
 	requestDate := time.Now()
 	emailSentDate := requestDate.Add(time.Hour + 2)
 	entry := &tracking.Entry{
-		ID: expectedID,
 		DatasetVersionIndex: tracking.DatasetVersionIndex{
+			ID:                expectedID,
 			DatasetVersion:    dataset.DatasetVersion(),
 			UserName:          user.Name,
 			UserEmail:         user.Email,
@@ -199,7 +199,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 	}
 }
 
-func TestDyDBStore_GetDatasetVersionIndex(t *testing.T) {
+func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
 	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
@@ -222,11 +222,20 @@ func TestDyDBStore_GetDatasetVersionIndex(t *testing.T) {
 		tracking.NewEntry(uuid.NewString(), dataset, user2, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 		tracking.NewEntry(uuid.NewString(), dataset, user1, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 	}
+	origEntryIndicesByID := map[string]tracking.DatasetVersionIndex{}
+	for _, e := range origEntries {
+		asEntry := e.(*tracking.Entry)
+		origEntryIndicesByID[asEntry.ID] = asEntry.DatasetVersionIndex
+	}
 
 	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, origEntries...)...)
 	defer dyDB.Teardown()
 
-	indexEntries, err := store.GetDatasetVersionIndex(ctx, dataset, 10)
+	indexItems, err := store.QueryDatasetVersionIndex(ctx, dataset, 10)
 	require.NoError(t, err)
-	require.Len(t, indexEntries, len(origEntries))
+	require.Len(t, indexItems, len(origEntries))
+	for _, i := range indexItems {
+		require.Contains(t, origEntryIndicesByID, i.ID)
+		assert.Equal(t, origEntryIndicesByID[i.ID], i)
+	}
 }

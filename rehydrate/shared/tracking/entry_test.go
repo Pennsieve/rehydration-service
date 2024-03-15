@@ -15,8 +15,8 @@ func TestEntry_ItemRoundTrip(t *testing.T) {
 	requestDate := emailSentDate.Add(-time.Hour * 3)
 
 	entry := &tracking.Entry{
-		ID: uuid.NewString(),
 		DatasetVersionIndex: tracking.DatasetVersionIndex{
+			ID:                uuid.NewString(),
 			DatasetVersion:    "451/3/",
 			UserName:          "First Last",
 			UserEmail:         "last@example.com",

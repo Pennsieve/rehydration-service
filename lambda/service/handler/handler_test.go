@@ -90,8 +90,17 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 		Status:         sharedidempotency.InProgress,
 		FargateTaskARN: "arn:aws:ecs:test:test:test:test",
 	}
-	existingInProgressTracking := tracking.NewEntry(uuid.NewString(), dataset, user, uuid.NewString(), uuid.NewString(), inProgress.FargateTaskARN)
-	fixture := NewFixtureBuilder(t).withIdempotencyTable(inProgress).withTrackingTable(*existingInProgressTracking).build()
+	existingInProgressTracking := tracking.NewEntry(
+		uuid.NewString(),
+		dataset,
+		user,
+		uuid.NewString(),
+		uuid.NewString(),
+		inProgress.FargateTaskARN)
+	fixture := NewFixtureBuilder(t).
+		withIdempotencyTable(inProgress).
+		withTrackingTable(*existingInProgressTracking).
+		build()
 	defer fixture.teardown()
 
 	request := models.Request{
@@ -138,53 +147,79 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 	}
 }
 
-//TODO finish updating the tests below for tracking. Fiqure out why DynamoDB CreateTable sometimes fails only when running 'make test'
-
 func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
+
+	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 	expired := sharedidempotency.Record{
 		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
 		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
 		Status:              sharedidempotency.Expired,
-		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
+		FargateTaskARN:      expectedTaskARN,
 	}
-	fixture := NewFixtureBuilder(t).withIdempotencyTable(expired).build()
+	fixture := NewFixtureBuilder(t).
+		withIdempotencyTable(expired).
+		withTrackingTable().
+		build()
 	defer fixture.teardown()
 
-	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 	request := models.Request{
 		Dataset: dataset,
 		User:    user,
 	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
+	ctx := context.Background()
 
 	expectedStatusCode := 500
-	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
+	beforeRequest := time.Now()
+	response, err := handler.RehydrationServiceHandler(ctx, lambdaRequest)
 	require.NoError(t, err)
+	afterRequest := time.Now()
 	require.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	require.Contains(t, response.Body, "expiration in progress")
 
-	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
+	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, expired, *record)
+
+	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
+	require.Len(t, trackingItems, 1)
+	entry, err := tracking.FromItem(trackingItems[0])
+	require.NoError(t, err)
+
+	assert.Equal(t, request.Dataset.DatasetVersion(), entry.DatasetVersion)
+	assert.Equal(t, tracking.Expired, entry.RehydrationStatus)
+	assert.Equal(t, request.User.Name, entry.UserName)
+	assert.Equal(t, request.User.Email, entry.UserEmail)
+	assert.Empty(t, entry.FargateTaskARN)
+	assert.False(t, beforeRequest.After(entry.RequestDate))
+	assert.False(t, afterRequest.Before(entry.RequestDate))
+	assert.Nil(t, entry.EmailSentDate)
+	// Don't know the expected value of this without access to the RehydrationRequest object.
+	assert.NotEmpty(t, entry.ID)
 }
 
 func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 	completed := sharedidempotency.Record{
 		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
 		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
 		Status:              sharedidempotency.Completed,
-		FargateTaskARN:      "arn:aws:ecs:test:test:test:test",
+		FargateTaskARN:      expectedTaskARN,
 	}
-	fixture := NewFixtureBuilder(t).withIdempotencyTable(completed).build()
+	fixture := NewFixtureBuilder(t).
+		withIdempotencyTable(completed).
+		withTrackingTable().
+		build()
 	defer fixture.teardown()
 
 	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
@@ -193,19 +228,39 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 		User:    user,
 	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
+	ctx := context.Background()
+
 	expectedStatusCode := 202
-	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
+	beforeRequest := time.Now()
+	response, err := handler.RehydrationServiceHandler(ctx, lambdaRequest)
 	require.NoError(t, err)
+	afterRequest := time.Now()
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	assert.Contains(t, response.Body, completed.RehydrationLocation)
 	assert.Contains(t, response.Body, completed.FargateTaskARN)
 
-	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
+	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
 	assert.Equal(t, completed, *record)
+
+	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
+	require.Len(t, trackingItems, 1)
+	entry, err := tracking.FromItem(trackingItems[0])
+	require.NoError(t, err)
+
+	assert.Equal(t, request.Dataset.DatasetVersion(), entry.DatasetVersion)
+	assert.Equal(t, tracking.Completed, entry.RehydrationStatus)
+	assert.Equal(t, request.User.Name, entry.UserName)
+	assert.Equal(t, request.User.Email, entry.UserEmail)
+	assert.Equal(t, expectedTaskARN, entry.FargateTaskARN)
+	assert.False(t, beforeRequest.After(entry.RequestDate))
+	assert.False(t, afterRequest.Before(entry.RequestDate))
+	assert.Nil(t, entry.EmailSentDate)
+	// Don't know the expected value of this without access to the RehydrationRequest object.
+	assert.NotEmpty(t, entry.ID)
 }
 
 func TestRehydrationServiceHandler_ECSError(t *testing.T) {
@@ -213,7 +268,11 @@ func TestRehydrationServiceHandler_ECSError(t *testing.T) {
 
 	expectedStatusCode := 500
 	errorBody := `{"code": "ECSError", "message": "server error on ECS"}`
-	fixture := NewFixtureBuilder(t).withECSError(expectedStatusCode, errorBody).withIdempotencyTable().build()
+	fixture := NewFixtureBuilder(t).
+		withECSError(expectedStatusCode, errorBody).
+		withIdempotencyTable().
+		withTrackingTable().
+		build()
 	defer fixture.teardown()
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
@@ -223,14 +282,35 @@ func TestRehydrationServiceHandler_ECSError(t *testing.T) {
 		User:    user,
 	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
-	response, err := handler.RehydrationServiceHandler(context.Background(), lambdaRequest)
+	ctx := context.Background()
+
+	beforeRequest := time.Now()
+	response, err := handler.RehydrationServiceHandler(ctx, lambdaRequest)
 	require.NoError(t, err)
+	afterRequest := time.Now()
+
 	assert.Equal(t, expectedStatusCode, response.StatusCode,
 		"expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	fmt.Println(response.Body)
 
-	scanned := fixture.dyDB.Scan(context.Background(), fixture.idempotencyTable)
+	scanned := fixture.dyDB.Scan(ctx, fixture.idempotencyTable)
 	require.Len(t, scanned, 0)
+
+	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
+	require.Len(t, trackingItems, 1)
+	entry, err := tracking.FromItem(trackingItems[0])
+	require.NoError(t, err)
+
+	assert.Equal(t, request.Dataset.DatasetVersion(), entry.DatasetVersion)
+	assert.Equal(t, tracking.Unknown, entry.RehydrationStatus)
+	assert.Equal(t, request.User.Name, entry.UserName)
+	assert.Equal(t, request.User.Email, entry.UserEmail)
+	assert.Empty(t, entry.FargateTaskARN)
+	assert.False(t, beforeRequest.After(entry.RequestDate))
+	assert.False(t, afterRequest.Before(entry.RequestDate))
+	assert.Nil(t, entry.EmailSentDate)
+	// Don't know the expected value of this without access to the RehydrationRequest object.
+	assert.NotEmpty(t, entry.ID)
 }
 
 func TestRehydrationServiceHandler_BadRequests(t *testing.T) {

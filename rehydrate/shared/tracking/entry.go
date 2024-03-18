@@ -18,6 +18,7 @@ const (
 	Unknown    RehydrationStatus = "UNKNOWN"
 	InProgress RehydrationStatus = "IN_PROGRESS"
 	Completed  RehydrationStatus = "COMPLETED"
+	Expired    RehydrationStatus = "EXPIRED"
 	Failed     RehydrationStatus = "FAILED"
 )
 

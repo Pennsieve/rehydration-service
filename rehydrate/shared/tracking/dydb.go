@@ -34,58 +34,6 @@ func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyD
 	}
 }
 
-func (s *DyDBStore) NewInProgressEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) error {
-	requestDate := time.Now()
-	inProgress := &Entry{
-		DatasetVersionIndex: DatasetVersionIndex{
-			ID:                id,
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: InProgress,
-		},
-		LambdaLogStream: lambdaLogStream,
-		AWSRequestID:    awsRequestID,
-		RequestDate:     requestDate,
-		FargateTaskARN:  fargateTaskARN,
-	}
-	return s.PutEntry(ctx, inProgress)
-}
-
-func (s *DyDBStore) NewFailedEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID string) error {
-	requestDate := time.Now()
-	inProgress := &Entry{
-		DatasetVersionIndex: DatasetVersionIndex{
-			ID:                id,
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: Failed,
-		},
-		LambdaLogStream: lambdaLogStream,
-		AWSRequestID:    awsRequestID,
-		RequestDate:     requestDate,
-	}
-	return s.PutEntry(ctx, inProgress)
-}
-
-func (s *DyDBStore) NewUnknownEntry(ctx context.Context, id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID string) error {
-	requestDate := time.Now()
-	inProgress := &Entry{
-		DatasetVersionIndex: DatasetVersionIndex{
-			ID:                id,
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: Unknown,
-		},
-		LambdaLogStream: lambdaLogStream,
-		AWSRequestID:    awsRequestID,
-		RequestDate:     requestDate,
-	}
-	return s.PutEntry(ctx, inProgress)
-}
-
 func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time.Time, status RehydrationStatus) error {
 	expressionAttrNames := map[string]string{
 		"#emailSentDate": EmailSentDateAttrName,

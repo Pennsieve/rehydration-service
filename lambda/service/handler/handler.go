@@ -62,11 +62,16 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	out, err := handler.Handle(ctx)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error handling RehydrationRequest", "error", err)
-		// Maybe we should be writing failed to the tracking table in this case?
-		// But now we are only using the "failed" state for a task that started okay, but failed along the way.
-		// Here all we know is that the task failed to start, not that the task itself failed.
-		// Maybe we should add a new status for this.
-		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
+		var expiredError idempotency.ExpiredError
+		if errors.As(err, &expiredError) {
+			rehydrationRequest.WriteNewExpiredRequest(ctx, trackingStore)
+		} else {
+			// Maybe we should be writing failed to the tracking table in this case?
+			// But now we are only using the "failed" state for a task that started okay, but failed along the way.
+			// Here all we know is that the task failed to start, not that the task itself failed.
+			// Maybe we should add a new status for this.
+			rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
+		}
 		return errorResponse(500, err, lambdaRequest)
 	}
 
@@ -76,7 +81,11 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		completionLogAttrs = append(completionLogAttrs, slog.String("rehydrationLocation", out.RehydrationLocation))
 	}
 	rehydrationRequest.Logger.Info("request complete", completionLogAttrs...)
-	rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)
+	if len(out.RehydrationLocation) == 0 {
+		rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)
+	} else {
+		rehydrationRequest.WriteNewCompletedRequest(ctx, trackingStore, out.TaskARN)
+	}
 
 	respBody, err := out.String()
 	if err != nil {

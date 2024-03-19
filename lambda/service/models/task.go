@@ -1,14 +1,13 @@
 package models
 
 import (
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/pennsieve/rehydration-service/shared"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -25,36 +24,36 @@ type ECSTaskConfig struct {
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
-	taskDefinitionArn, err := nonEmptyFromEnvVar("TASK_DEF_ARN")
+	taskDefinitionArn, err := shared.NonEmptyFromEnvVar("TASK_DEF_ARN")
 	if err != nil {
 		return nil, err
 	}
-	subIdStr, err := nonEmptyFromEnvVar("SUBNET_IDS")
+	subIdStr, err := shared.NonEmptyFromEnvVar("SUBNET_IDS")
 	if err != nil {
 		return nil, err
 	}
 	subNetIds := strings.Split(subIdStr, ",")
-	cluster, err := nonEmptyFromEnvVar("CLUSTER_ARN")
+	cluster, err := shared.NonEmptyFromEnvVar("CLUSTER_ARN")
 	if err != nil {
 		return nil, err
 	}
-	securityGroup, err := nonEmptyFromEnvVar("SECURITY_GROUP")
+	securityGroup, err := shared.NonEmptyFromEnvVar("SECURITY_GROUP")
 	if err != nil {
 		return nil, err
 	}
-	taskDefContainerName, err := nonEmptyFromEnvVar("TASK_DEF_CONTAINER_NAME")
+	taskDefContainerName, err := shared.NonEmptyFromEnvVar("TASK_DEF_CONTAINER_NAME")
 	if err != nil {
 		return nil, err
 	}
-	envValue, err := nonEmptyFromEnvVar(sharedmodels.ECSTaskEnvKey)
+	envValue, err := shared.NonEmptyFromEnvVar(sharedmodels.ECSTaskEnvKey)
 	if err != nil {
 		return nil, err
 	}
-	idempotencyTable, err := nonEmptyFromEnvVar(idempotency.TableNameKey)
+	idempotencyTable, err := shared.NonEmptyFromEnvVar(idempotency.TableNameKey)
 	if err != nil {
 		return nil, err
 	}
-	trackingTable, err := nonEmptyFromEnvVar(tracking.TableNameKey)
+	trackingTable, err := shared.NonEmptyFromEnvVar(tracking.TableNameKey)
 	if err != nil {
 		return nil, err
 	}
@@ -69,16 +68,6 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		IdempotencyTableName: idempotencyTable,
 		TrackingTableName:    trackingTable,
 	}, nil
-}
-
-func nonEmptyFromEnvVar(key string) (string, error) {
-	if value, set := os.LookupEnv(key); !set {
-		return "", fmt.Errorf("required environment variable %s is not set", key)
-	} else if len(value) == 0 {
-		return "", fmt.Errorf("empty value set for environment variable %s", key)
-	} else {
-		return value, nil
-	}
 }
 
 func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmodels.User) *ecs.RunTaskInput {

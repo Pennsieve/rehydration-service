@@ -43,11 +43,11 @@ func TestDyDBStore_PutEntry(t *testing.T) {
 			UserName:          user.Name,
 			UserEmail:         user.Email,
 			RehydrationStatus: tracking.InProgress,
+			EmailSentDate:     &emailSentDate,
 		},
 		LambdaLogStream: expectedLambdaLog,
 		AWSRequestID:    awsRequestID,
 		RequestDate:     requestDate,
-		EmailSentDate:   &emailSentDate,
 		FargateTaskARN:  "arn:ecs:test::test",
 	}
 	err := store.PutEntry(ctx, entry)
@@ -128,25 +128,41 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 		Email: "sur@example.com",
 	}
 	expectedFargateTaskARN := "arn::::test:test"
-	origEntries := []test.Itemer{
+	alreadyHandledRequestDate := time.Now().Add(-time.Hour * 24)
+	alreadyHandledEmailSentData := alreadyHandledRequestDate.Add(time.Hour * 12)
+	alreadyHandledEntry := &tracking.Entry{
+		DatasetVersionIndex: tracking.DatasetVersionIndex{
+			ID:                uuid.NewString(),
+			DatasetVersion:    dataset.DatasetVersion(),
+			UserName:          "Hal Blaine",
+			UserEmail:         "hb@example.com",
+			RehydrationStatus: tracking.Completed,
+			EmailSentDate:     &alreadyHandledEmailSentData,
+		},
+		LambdaLogStream: uuid.NewString(),
+		AWSRequestID:    uuid.NewString(),
+		RequestDate:     alreadyHandledRequestDate,
+		FargateTaskARN:  uuid.NewString(),
+	}
+	unhandledEntries := []test.Itemer{
 		tracking.NewEntry(uuid.NewString(), dataset, user1, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 		tracking.NewEntry(uuid.NewString(), dataset, user2, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 		tracking.NewEntry(uuid.NewString(), dataset, user1, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 	}
-	origEntryIndicesByID := map[string]tracking.DatasetVersionIndex{}
-	for _, e := range origEntries {
+	unhandledEntryIndicesByID := map[string]tracking.DatasetVersionIndex{}
+	for _, e := range unhandledEntries {
 		asEntry := e.(*tracking.Entry)
-		origEntryIndicesByID[asEntry.ID] = asEntry.DatasetVersionIndex
+		unhandledEntryIndicesByID[asEntry.ID] = asEntry.DatasetVersionIndex
 	}
-
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, origEntries...)...)
+	allEntries := append(unhandledEntries, alreadyHandledEntry)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, allEntries...)...)
 	defer dyDB.Teardown()
 
-	indexItems, err := store.QueryDatasetVersionIndex(ctx, dataset, 10)
+	indexItems, err := store.QueryDatasetVersionIndexUnhandled(ctx, dataset, 2)
 	require.NoError(t, err)
-	require.Len(t, indexItems, len(origEntries))
+	require.Len(t, indexItems, len(unhandledEntries))
 	for _, i := range indexItems {
-		require.Contains(t, origEntryIndicesByID, i.ID)
-		assert.Equal(t, origEntryIndicesByID[i.ID], i)
+		require.Contains(t, unhandledEntryIndicesByID, i.ID)
+		assert.Equal(t, unhandledEntryIndicesByID[i.ID], i)
 	}
 }

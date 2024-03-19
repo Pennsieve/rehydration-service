@@ -42,8 +42,8 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time
 	temp := &Entry{
 		DatasetVersionIndex: DatasetVersionIndex{
 			RehydrationStatus: status,
+			EmailSentDate:     &emailSentDate,
 		},
-		EmailSentDate: &emailSentDate,
 	}
 	expressionValues, err := temp.Item()
 	if err != nil {
@@ -81,30 +81,37 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time
 	return nil
 }
 
-func (s *DyDBStore) QueryDatasetVersionIndex(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error) {
+func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error) {
 	var indexEntries []DatasetVersionIndex
 	var errs []error
 	datasetVersionTerm := ":datasetVersion"
 	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)
 	expressionValues := map[string]types.AttributeValue{datasetVersionTerm: stringAttributeValue(dataset.DatasetVersion())}
+
+	filterExpression := fmt.Sprintf("attribute_not_exists(%s)", EmailSentDateAttrName)
+
 	queryIn := &dynamodb.QueryInput{
 		TableName:                 aws.String(s.table),
 		IndexName:                 aws.String(DatasetVersionIndexName),
 		ExpressionAttributeValues: expressionValues,
 		KeyConditionExpression:    aws.String(keyCondition),
-		FilterExpression:          nil,
+		FilterExpression:          aws.String(filterExpression),
 		Limit:                     aws.Int32(limit),
-		ExclusiveStartKey:         nil,
 	}
-	queryOut, err := s.client.Query(ctx, queryIn)
-	if err != nil {
-		return nil, fmt.Errorf("error querying DatasetVersionIndex: %w", err)
-	}
-	for _, i := range queryOut.Items {
-		if indexEntry, err := DatasetVersionIndexFromItem(i); err == nil {
-			indexEntries = append(indexEntries, *indexEntry)
-		} else {
-			errs = append(errs, err)
+	var lastEvaluatedKey map[string]types.AttributeValue
+	for runQuery := true; runQuery; runQuery = len(lastEvaluatedKey) != 0 {
+		queryIn.ExclusiveStartKey = lastEvaluatedKey
+		queryOut, err := s.client.Query(ctx, queryIn)
+		if err != nil {
+			return nil, fmt.Errorf("error querying DatasetVersionIndex: %w", err)
+		}
+		lastEvaluatedKey = queryOut.LastEvaluatedKey
+		for _, i := range queryOut.Items {
+			if indexEntry, err := DatasetVersionIndexFromItem(i); err == nil {
+				indexEntries = append(indexEntries, *indexEntry)
+			} else {
+				errs = append(errs, err)
+			}
 		}
 	}
 	return indexEntries, errors.Join(errs...)

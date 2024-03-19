@@ -12,6 +12,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/pennsieve/rehydration-service/shared/test/discovertest"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"log/slog"
@@ -48,8 +49,13 @@ func TestRehydrationTaskHandler(t *testing.T) {
 
 		// Setup DynamoDB for tests
 		initialIdempotencyRecord := newInProgressRecord(*dataset)
-		dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName)).WithItems(
-			test.ItemersToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
+		dyDB := test.NewDynamoDBFixture(
+			t,
+			awsConfig,
+			test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName),
+			test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+			WithItems(
+				test.ItemersToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
 
 		// Create a mock Discover API server
 		mockDiscover := discovertest.NewServerFixture(t, nil,
@@ -61,10 +67,8 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			taskEnv.PennsieveHost = mockDiscover.Server.URL
 			taskConfig := config.NewConfig(awsConfig, taskEnv)
-			rehydrator := NewDatasetRehydrator(taskConfig, testParams.thresholdSize)
-			idempotencyStore, err := taskConfig.IdempotencyStore()
-			require.NoError(t, err)
-			require.NoError(t, RehydrationTaskHandler(ctx, rehydrator, idempotencyStore))
+			trackHandler := NewTaskHandler(taskConfig, testParams.thresholdSize)
+			require.NoError(t, RehydrationTaskHandler(ctx, trackHandler))
 			for _, datasetFile := range testDatasetFiles.Files {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
@@ -99,8 +103,13 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 
 	// Setup DynamoDB for tests
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
-		test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+	dyDB := test.NewDynamoDBFixture(
+		t,
+		awsConfig,
+		test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
+		test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+		WithItems(
+			test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 	defer dyDB.Teardown()
 
 	// Create a mock Discover API server
@@ -117,11 +126,8 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	taskConfig := config.NewConfig(awsConfig, taskEnv)
 	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(copyFailPath))
 
-	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
-	idempotencyStore, err := taskConfig.IdempotencyStore()
-	require.NoError(t, err)
-
-	err = RehydrationTaskHandler(ctx, rehydrator, idempotencyStore)
+	taskHandler := NewTaskHandler(taskConfig, ThresholdSize)
+	err := RehydrationTaskHandler(ctx, taskHandler)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), copyFailPath)
 
@@ -161,8 +167,13 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Setup DynamoDB for tests
-			dyDB := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName)).WithItems(
-				test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+			dyDB := test.NewDynamoDBFixture(
+				t,
+				awsConfig,
+				test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
+				test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+				WithItems(
+					test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
 			defer dyDB.Teardown()
 
 			// Create a mock Discover API server
@@ -174,11 +185,8 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			// No calls should be made to S3
 			taskConfig.SetObjectProcessor(NewNoCallsObjectProcessor(t))
 
-			rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)
-			idempotencyStore, err := taskConfig.IdempotencyStore()
-			require.NoError(t, err)
-
-			err = RehydrationTaskHandler(ctx, rehydrator, idempotencyStore)
+			taskHandler := NewTaskHandler(taskConfig, ThresholdSize)
+			err := RehydrationTaskHandler(ctx, taskHandler)
 			require.Error(t, err)
 
 			// idempotency record should have been deleted so that another attempt can be made
@@ -204,6 +212,7 @@ func newTestConfigEnv() *config.Env {
 		User:             user,
 		TaskEnv:          "TEST",
 		IdempotencyTable: "test-idempotency-table",
+		TrackingTable:    "test-tracking-table",
 	}
 }
 

@@ -12,8 +12,14 @@ func TrackingCreateTableInput(tableName string, trackingKeyAttrName string) *dyn
 		IndexName: aws.String(tracking.DatasetVersionIndexName),
 		KeySchema: []types.KeySchemaElement{{AttributeName: aws.String(tracking.DatasetVersionAttrName), KeyType: types.KeyTypeHash}},
 		Projection: &types.Projection{
-			NonKeyAttributes: []string{tracking.IDAttrName, tracking.UserNameAttrName, tracking.UserEmailAttrName, tracking.RehydrationStatusAttrName},
-			ProjectionType:   types.ProjectionTypeInclude,
+			NonKeyAttributes: []string{
+				tracking.IDAttrName,
+				tracking.UserNameAttrName,
+				tracking.UserEmailAttrName,
+				tracking.RehydrationStatusAttrName,
+				tracking.EmailSentDateAttrName,
+			},
+			ProjectionType: types.ProjectionTypeInclude,
 		},
 	}}
 	return &dynamodb.CreateTableInput{

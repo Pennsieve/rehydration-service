@@ -24,16 +24,13 @@ type Handler struct {
 	ecsHandler ecs.Handler
 }
 
-func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) (*Handler, error) {
-	store, err := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
-	if err != nil {
-		return nil, err
-	}
+func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) *Handler {
+	store := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
 	return &Handler{
 		store:      store,
 		request:    req,
 		ecsHandler: ecsHandler,
-	}, nil
+	}
 }
 
 type Response struct {

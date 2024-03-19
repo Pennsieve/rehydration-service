@@ -52,12 +52,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		IdempotencyTable: taskConfig.IdempotencyTableName,
 	}
 
-	handler, err := idempotency.NewHandler(idempotencyConfig, rehydrationRequest, ecsHandler)
-	if err != nil {
-		rehydrationRequest.Logger.Error("error creating idempotency handler", "error", err)
-		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
-		return errorResponse(500, err, lambdaRequest)
-	}
+	handler := idempotency.NewHandler(idempotencyConfig, rehydrationRequest, ecsHandler)
 
 	out, err := handler.Handle(ctx)
 	if err != nil {
@@ -78,14 +73,13 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	completionLogAttrs := []any{slog.String("fargateTaskARN", out.TaskARN)}
 	if len(out.RehydrationLocation) != 0 {
 		// this will only be true if this request is for an already completed, non-expired rehydration
+		rehydrationRequest.WriteNewCompletedRequest(ctx, trackingStore, out.TaskARN)
+		// TODO send email from here. Fargate takes care of sending emails for any requests with InProgress status but if we are here that's in the past.
 		completionLogAttrs = append(completionLogAttrs, slog.String("rehydrationLocation", out.RehydrationLocation))
+	} else {
+		rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)
 	}
 	rehydrationRequest.Logger.Info("request complete", completionLogAttrs...)
-	if len(out.RehydrationLocation) == 0 {
-		rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)
-	} else {
-		rehydrationRequest.WriteNewCompletedRequest(ctx, trackingStore, out.TaskARN)
-	}
 
 	respBody, err := out.String()
 	if err != nil {

@@ -21,11 +21,11 @@ func TestEntry_ItemRoundTrip(t *testing.T) {
 			UserName:          "First Last",
 			UserEmail:         "last@example.com",
 			RehydrationStatus: tracking.Completed,
+			EmailSentDate:     &emailSentDate,
 		},
 		LambdaLogStream: "/lambda/log/stream/name",
 		AWSRequestID:    "REQUEST-1234",
 		RequestDate:     requestDate,
-		EmailSentDate:   &emailSentDate,
 		FargateTaskARN:  "arn:ecs:test:test:test",
 	}
 

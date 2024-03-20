@@ -490,7 +490,7 @@ func (b *FixtureBuilder) withTrackingTable(entries ...tracking.Entry) *FixtureBu
 		assert.FailNow(b.testingT, "tracking table name missing from environment variables or empty", "env var name: %s", tracking.TableNameKey)
 	}
 	b.trackingTableName = table
-	b.createTableInputs = append(b.createTableInputs, test.TrackingCreateTableInput(table, tracking.IDAttrName))
+	b.createTableInputs = append(b.createTableInputs, test.TrackingCreateTableInput(table))
 	for i := range entries {
 		entry := &entries[i]
 		b.putItemInputs = append(b.putItemInputs, test.ItemersToPutItemInputs(b.testingT, b.trackingTableName, entry)...)

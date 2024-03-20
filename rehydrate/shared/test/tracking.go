@@ -7,7 +7,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 )
 
-func TrackingCreateTableInput(tableName string, trackingKeyAttrName string) *dynamodb.CreateTableInput {
+func TrackingCreateTableInput(tableName string) *dynamodb.CreateTableInput {
 	globalIndices := []types.GlobalSecondaryIndex{{
 		IndexName: aws.String(tracking.DatasetVersionIndexName),
 		KeySchema: []types.KeySchemaElement{{AttributeName: aws.String(tracking.DatasetVersionAttrName), KeyType: types.KeyTypeHash}},
@@ -26,7 +26,7 @@ func TrackingCreateTableInput(tableName string, trackingKeyAttrName string) *dyn
 		TableName: aws.String(tableName),
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
-				AttributeName: aws.String(trackingKeyAttrName),
+				AttributeName: aws.String(tracking.IDAttrName),
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 			{
@@ -36,7 +36,7 @@ func TrackingCreateTableInput(tableName string, trackingKeyAttrName string) *dyn
 		},
 		KeySchema: []types.KeySchemaElement{
 			{
-				AttributeName: aws.String(trackingKeyAttrName),
+				AttributeName: aws.String(tracking.IDAttrName),
 				KeyType:       types.KeyTypeHash,
 			},
 		},

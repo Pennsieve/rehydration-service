@@ -96,7 +96,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 				t,
 				awsConfig,
 				test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName),
-				test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+				test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 				WithItems(putItemInputs...)
 			defer dyDB.Teardown()
 
@@ -180,7 +180,7 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 		t,
 		awsConfig,
 		test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
-		test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+		test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 		WithItems(
 			test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
 				idempotencyTable:      {initialIdempotencyRecord},
@@ -261,7 +261,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 				t,
 				awsConfig,
 				test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
-				test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+				test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 				WithItems(
 					test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
 						idempotencyTable:      {initialIdempotencyRecord},

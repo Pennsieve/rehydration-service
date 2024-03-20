@@ -85,6 +85,8 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     resources = [
       aws_dynamodb_table.idempotency_table.arn,
       "${aws_dynamodb_table.idempotency_table.arn}/*",
+      aws_dynamodb_table.tracking_table.arn,
+      "${aws_dynamodb_table.tracking_table.arn}/*",
     ]
 
   }
@@ -223,6 +225,8 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
     resources = [
       aws_dynamodb_table.idempotency_table.arn,
       "${aws_dynamodb_table.idempotency_table.arn}/*",
+      aws_dynamodb_table.tracking_table.arn,
+      "${aws_dynamodb_table.tracking_table.arn}/*",
     ]
 
   }

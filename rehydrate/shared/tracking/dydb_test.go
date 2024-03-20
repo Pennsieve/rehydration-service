@@ -20,7 +20,7 @@ func TestDyDBStore_PutEntry(t *testing.T) {
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
 	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName))
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName))
 	defer dyDB.Teardown()
 
 	expectedID := uuid.NewString()
@@ -77,7 +77,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 	expectedFargateTaskARN := "arn::::test:test"
 	origEntry := tracking.NewEntry(expectedID, dataset, user, expectedLambdaLog, expectedAWSRequestID, expectedFargateTaskARN)
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, origEntry)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, origEntry)...)
 	defer dyDB.Teardown()
 
 	emailSentDate := time.Now().Add(time.Hour * 7)
@@ -155,7 +155,7 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 		unhandledEntryIndicesByID[asEntry.ID] = asEntry.DatasetVersionIndex
 	}
 	allEntries := append(unhandledEntries, alreadyHandledEntry)
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName, tracking.IDAttrName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, allEntries...)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, allEntries...)...)
 	defer dyDB.Teardown()
 
 	indexItems, err := store.QueryDatasetVersionIndexUnhandled(ctx, dataset, 2)

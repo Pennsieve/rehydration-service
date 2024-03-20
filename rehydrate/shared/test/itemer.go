@@ -24,3 +24,11 @@ func ItemersToPutItemInputs(t *testing.T, tableName string, itemers ...Itemer) [
 	}
 	return inputs
 }
+
+func ItemerMapToPutItemInputs(t *testing.T, tableNameToItemers map[string][]Itemer) []*dynamodb.PutItemInput {
+	var inputs []*dynamodb.PutItemInput
+	for tableName, itemers := range tableNameToItemers {
+		inputs = append(inputs, ItemersToPutItemInputs(t, tableName, itemers...)...)
+	}
+	return inputs
+}

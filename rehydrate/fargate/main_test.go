@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
@@ -18,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestRehydrationTaskHandler(t *testing.T) {
@@ -36,39 +39,81 @@ func TestRehydrationTaskHandler(t *testing.T) {
 		"simple copies":    {thresholdSize: ThresholdSize},
 		"multipart copies": {thresholdSize: 10},
 	} {
-
-		// Set up S3 for the tests
-		s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig), &s3.CreateBucketInput{
-			Bucket: aws.String(publishBucket),
-		}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
-
-		// Set S3 versionIds
-		for location, putOutput := range putObjectOutputs {
-			testDatasetFiles.SetS3VersionID(t, location, aws.ToString(putOutput.VersionId))
-		}
-
-		// Setup DynamoDB for tests
-		initialIdempotencyRecord := newInProgressRecord(*dataset)
-		dyDB := test.NewDynamoDBFixture(
-			t,
-			awsConfig,
-			test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName),
-			test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
-			WithItems(
-				test.ItemersToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
-
-		// Create a mock Discover API server
-		mockDiscover := discovertest.NewServerFixture(t, nil,
-			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
-			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
-			discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
-		)
-
 		t.Run(testName, func(t *testing.T) {
+			// Set up S3 for the tests
+			s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig), &s3.CreateBucketInput{
+				Bucket: aws.String(publishBucket),
+			}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
+			defer s3Fixture.Teardown()
+
+			// Set S3 versionIds
+			for location, putOutput := range putObjectOutputs {
+				testDatasetFiles.SetS3VersionID(t, location, aws.ToString(putOutput.VersionId))
+			}
+
+			// Setup DynamoDB for tests
+			var putItemInputs []*dynamodb.PutItemInput
+			// Idempotency record
+			initialIdempotencyRecord := newInProgressRecord(*dataset)
+			putItemInputs = append(putItemInputs, test.ItemersToPutItemInputs(t, taskEnv.IdempotencyTable, initialIdempotencyRecord)...)
+			expectedTaskARN := initialIdempotencyRecord.FargateTaskARN
+
+			// Some tracking entries
+			user2 := models.User{
+				Name:  "Guy Sur",
+				Email: "sur@example.com",
+			}
+			alreadyHandledRequestDate := time.Now().Add(-time.Hour * 24)
+			alreadyHandledEmailSentData := alreadyHandledRequestDate.Add(time.Hour * 12)
+			alreadyHandledEntry := &tracking.Entry{
+				DatasetVersionIndex: tracking.DatasetVersionIndex{
+					ID:                uuid.NewString(),
+					DatasetVersion:    dataset.DatasetVersion(),
+					UserName:          "Hal Blaine",
+					UserEmail:         "hb@example.com",
+					RehydrationStatus: tracking.Completed,
+					EmailSentDate:     &alreadyHandledEmailSentData,
+				},
+				LambdaLogStream: uuid.NewString(),
+				AWSRequestID:    uuid.NewString(),
+				RequestDate:     alreadyHandledRequestDate,
+				FargateTaskARN:  uuid.NewString(),
+			}
+			unhandledEntries := []test.Itemer{
+				tracking.NewEntry(uuid.NewString(), *dataset, *taskEnv.User, uuid.NewString(), uuid.NewString(), expectedTaskARN),
+				tracking.NewEntry(uuid.NewString(), *dataset, user2, uuid.NewString(), uuid.NewString(), expectedTaskARN),
+				tracking.NewEntry(uuid.NewString(), *dataset, *taskEnv.User, uuid.NewString(), uuid.NewString(), expectedTaskARN),
+			}
+			unhandledEntriesByID := map[string]*tracking.Entry{}
+			for _, e := range unhandledEntries {
+				asEntry := e.(*tracking.Entry)
+				unhandledEntriesByID[asEntry.ID] = asEntry
+			}
+			allEntries := append(unhandledEntries, alreadyHandledEntry)
+			putItemInputs = append(putItemInputs, test.ItemersToPutItemInputs(t, taskEnv.TrackingTable, allEntries...)...)
+
+			dyDB := test.NewDynamoDBFixture(
+				t,
+				awsConfig,
+				test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName),
+				test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
+				WithItems(putItemInputs...)
+			defer dyDB.Teardown()
+
+			// Create a mock Discover API server
+			mockDiscover := discovertest.NewServerFixture(t, nil,
+				discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
+				discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
+				discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
+			)
+			defer mockDiscover.Teardown()
+
 			taskEnv.PennsieveHost = mockDiscover.Server.URL
 			taskConfig := config.NewConfig(awsConfig, taskEnv)
 			trackHandler := NewTaskHandler(taskConfig, testParams.thresholdSize)
+			beforeTask := time.Now()
 			require.NoError(t, RehydrationTaskHandler(ctx, trackHandler))
+			afterTask := time.Now()
 			for _, datasetFile := range testDatasetFiles.Files {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
@@ -78,15 +123,36 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			updatedIdempotencyRecord, err := idempotency.FromItem(idempotencyItems[0])
 			require.NoError(t, err)
 			assert.Equal(t, initialIdempotencyRecord.ID, updatedIdempotencyRecord.ID)
-			assert.Equal(t, initialIdempotencyRecord.FargateTaskARN, updatedIdempotencyRecord.FargateTaskARN)
+			assert.Equal(t, expectedTaskARN, updatedIdempotencyRecord.FargateTaskARN)
 			assert.Equal(t, idempotency.Completed, updatedIdempotencyRecord.Status)
 			assert.Equal(t, utils.RehydrationLocation(publishBucket, dataset.ID, dataset.VersionID), updatedIdempotencyRecord.RehydrationLocation)
-		})
 
-		// Clean up for next run
-		s3Fixture.Teardown()
-		dyDB.Teardown()
-		mockDiscover.Teardown()
+			trackingItems := dyDB.Scan(ctx, taskEnv.TrackingTable)
+			require.Len(t, trackingItems, 4)
+			for _, trackingItem := range trackingItems {
+				entry, err := tracking.FromItem(trackingItem)
+				require.NoError(t, err)
+				assert.Equal(t, taskEnv.Dataset.DatasetVersion(), entry.DatasetVersion)
+				assert.Equal(t, tracking.Completed, entry.RehydrationStatus)
+				assert.NotNil(t, entry.EmailSentDate)
+				var expected *tracking.Entry
+				updatedEntry, previouslyUnhandled := unhandledEntriesByID[entry.ID]
+				if previouslyUnhandled {
+					expected = updatedEntry
+					assert.False(t, beforeTask.After(*entry.EmailSentDate))
+					assert.False(t, afterTask.Before(*entry.EmailSentDate))
+				} else {
+					expected = alreadyHandledEntry
+					assert.Equal(t, expected.EmailSentDate.Format(time.RFC3339Nano), entry.EmailSentDate.Format(time.RFC3339Nano))
+				}
+				assert.Equal(t, expected.UserName, entry.UserName)
+				assert.Equal(t, expected.UserEmail, entry.UserEmail)
+				assert.Equal(t, expected.FargateTaskARN, entry.FargateTaskARN)
+				assert.Equal(t, expected.LambdaLogStream, entry.LambdaLogStream)
+				assert.Equal(t, expected.AWSRequestID, entry.AWSRequestID)
+				assert.Equal(t, expected.RequestDate.Format(time.RFC3339Nano), entry.RequestDate.Format(time.RFC3339Nano))
+			}
+		})
 	}
 }
 
@@ -103,13 +169,23 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 
 	// Setup DynamoDB for tests
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
+	initialTrackingEntry := tracking.NewEntry(
+		uuid.NewString(),
+		*dataset,
+		*taskEnv.User,
+		uuid.NewString(),
+		uuid.NewString(),
+		initialIdempotencyRecord.FargateTaskARN)
 	dyDB := test.NewDynamoDBFixture(
 		t,
 		awsConfig,
 		test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
 		test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
 		WithItems(
-			test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+			test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
+				idempotencyTable:      {initialIdempotencyRecord},
+				taskEnv.TrackingTable: {initialTrackingEntry},
+			})...)
 	defer dyDB.Teardown()
 
 	// Create a mock Discover API server
@@ -127,13 +203,26 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(copyFailPath))
 
 	taskHandler := NewTaskHandler(taskConfig, ThresholdSize)
+	beforeEmailSent := time.Now()
 	err := RehydrationTaskHandler(ctx, taskHandler)
 	require.Error(t, err)
+	afterEmailSent := time.Now()
 	require.Contains(t, err.Error(), copyFailPath)
 
 	// Idempotency record should have been deleted so that another attempt can be made
 	idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
 	require.Len(t, idempotencyItems, 0)
+
+	// tracking entry should be marked as failed
+	trackingItems := dyDB.Scan(ctx, taskEnv.TrackingTable)
+	require.Len(t, trackingItems, 1)
+	entry, err := tracking.FromItem(trackingItems[0])
+	require.NoError(t, err)
+	assert.Equal(t, tracking.Failed, entry.RehydrationStatus)
+	assert.NotNil(t, entry.EmailSentDate)
+	assert.False(t, beforeEmailSent.After(*entry.EmailSentDate))
+	assert.False(t, afterEmailSent.Before(*entry.EmailSentDate))
+
 }
 
 func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
@@ -144,6 +233,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	idempotencyTable := taskEnv.IdempotencyTable
 	dataset := taskEnv.Dataset
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
+	initialTrackingEntry := tracking.NewEntry(uuid.NewString(), *dataset, *taskEnv.User, uuid.NewString(), uuid.NewString(), initialIdempotencyRecord.FargateTaskARN)
 
 	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
 	pathsToFail := map[string]bool{testDatasetFiles.Files[24].Path: true}
@@ -173,7 +263,10 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 				test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
 				test.TrackingCreateTableInput(taskEnv.TrackingTable, tracking.IDAttrName)).
 				WithItems(
-					test.ItemersToPutItemInputs(t, idempotencyTable, initialIdempotencyRecord)...)
+					test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
+						idempotencyTable:      {initialIdempotencyRecord},
+						taskEnv.TrackingTable: {initialTrackingEntry},
+					})...)
 			defer dyDB.Teardown()
 
 			// Create a mock Discover API server
@@ -186,12 +279,24 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			taskConfig.SetObjectProcessor(NewNoCallsObjectProcessor(t))
 
 			taskHandler := NewTaskHandler(taskConfig, ThresholdSize)
+			beforeEmailSent := time.Now()
 			err := RehydrationTaskHandler(ctx, taskHandler)
 			require.Error(t, err)
+			afterEmailSent := time.Now()
 
 			// idempotency record should have been deleted so that another attempt can be made
 			idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
 			require.Len(t, idempotencyItems, 0)
+
+			// tracking entry should be marked as failed
+			trackingItems := dyDB.Scan(ctx, taskEnv.TrackingTable)
+			require.Len(t, trackingItems, 1)
+			entry, err := tracking.FromItem(trackingItems[0])
+			require.NoError(t, err)
+			assert.Equal(t, tracking.Failed, entry.RehydrationStatus)
+			assert.NotNil(t, entry.EmailSentDate)
+			assert.False(t, beforeEmailSent.After(*entry.EmailSentDate))
+			assert.False(t, afterEmailSent.Before(*entry.EmailSentDate))
 		})
 
 	}

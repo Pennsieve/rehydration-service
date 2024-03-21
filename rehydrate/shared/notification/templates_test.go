@@ -2,25 +2,41 @@ package notification
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
 )
 
 func TestLoadTemplates(t *testing.T) {
 	require.NoError(t, LoadTemplates())
+	assert.NotNil(t, RehydrationCompleteTemplate)
+	assert.NotNil(t, RehydrationFailedTemplate)
+}
 
-	var emailBuilder strings.Builder
+func TestRehydrationCompleteEmailBody(t *testing.T) {
+	require.NoError(t, LoadTemplates())
+	datasetID := 1234
+	datasetVersionID := 2
+	rehydrationLocation := fmt.Sprintf("s3://bucket/rehydrated/%d/%d", datasetID, datasetVersionID)
 
-	emailData := RehydrationComplete{
-		DatasetID:           1569,
-		DatasetVersionID:    4,
-		RehydrationLocation: "s3://bucket/rehydrated/1569/4",
-	}
-	require.NoError(t, RehydrationCompleteTemplate.Execute(&emailBuilder, emailData))
+	body, err := RehydrationCompleteEmailBody(datasetID, datasetVersionID, rehydrationLocation)
+	require.NoError(t, err)
+	assert.Contains(t, body, "Rehydration Complete")
+	assert.Contains(t, body, rehydrationLocation)
+	assert.Contains(t, body, fmt.Sprintf("Dataset %d version %d", datasetID, datasetVersionID))
 
-	emailBody := emailBuilder.String()
-	assert.Contains(t, emailBody, emailData.RehydrationLocation)
-	assert.Contains(t, emailBody, fmt.Sprintf("Dataset %d version %d", emailData.DatasetID, emailData.DatasetVersionID))
+}
+
+func TestRehydrationFailedEmailBody(t *testing.T) {
+	require.NoError(t, LoadTemplates())
+	datasetID := 6803
+	datasetVersionID := 1
+	requestID := uuid.NewString()
+
+	body, err := RehydrationFailedEmailBody(datasetID, datasetVersionID, requestID)
+	require.NoError(t, err)
+	assert.Contains(t, body, "Rehydration Failed")
+	assert.Contains(t, body, requestID)
+	assert.Contains(t, body, fmt.Sprintf("Dataset %d version %d", datasetID, datasetVersionID))
 }

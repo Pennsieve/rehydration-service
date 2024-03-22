@@ -30,6 +30,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
       REGION                                 = var.aws_region,
       LOG_LEVEL                              = "info",
       TASK_DEF_CONTAINER_NAME                = var.tier,
+      PENNSIEVE_DOMAIN                       = data.terraform_remote_state.account.outputs.domain_name
       FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME = aws_dynamodb_table.idempotency_table.name,
       REQUEST_TRACKING_DYNAMODB_TABLE_NAME   = aws_dynamodb_table.tracking_table.name,
     }

@@ -12,21 +12,23 @@ import (
 const PennsieveDomainKey = "PENNSIEVE_DOMAIN"
 
 type SESEmailer struct {
-	client  *ses.Client
-	sender  string
-	charSet string
+	client    *ses.Client
+	sender    string
+	charSet   string
+	awsRegion string
 }
 
-func NewEmailer(awsConfig aws.Config, pennsieveDomain string) (Emailer, error) {
+func NewEmailer(awsConfig aws.Config, pennsieveDomain string, awsRegion string) (Emailer, error) {
 	if err := LoadTemplates(); err != nil {
 		return nil, err
 	}
 	client := ses.NewFromConfig(awsConfig)
 	sender := fmt.Sprintf("support@%s", pennsieveDomain)
 	return &SESEmailer{
-		client:  client,
-		sender:  sender,
-		charSet: "UTF-8",
+		client:    client,
+		sender:    sender,
+		charSet:   "UTF-8",
+		awsRegion: awsRegion,
 	}, nil
 }
 
@@ -37,7 +39,7 @@ type htmlEmail struct {
 }
 
 func (e *SESEmailer) SendRehydrationComplete(ctx context.Context, dataset models.Dataset, user models.User, rehydrationLocation string) error {
-	body, err := RehydrationCompleteEmailBody(dataset.ID, dataset.VersionID, rehydrationLocation)
+	body, err := RehydrationCompleteEmailBody(dataset.ID, dataset.VersionID, rehydrationLocation, e.awsRegion)
 	if err != nil {
 		return err
 	}

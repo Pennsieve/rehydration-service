@@ -86,7 +86,7 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 
 func (c *Config) Emailer() (notification.Emailer, error) {
 	if c.emailer == nil {
-		emailer, err := notification.NewEmailer(c.AWSConfig, c.Env.PennsieveDomain)
+		emailer, err := notification.NewEmailer(c.AWSConfig, c.Env.PennsieveDomain, c.Env.AWSRegion)
 		if err != nil {
 			return nil, err
 		}
@@ -108,6 +108,7 @@ type Env struct {
 	IdempotencyTable string
 	TrackingTable    string
 	PennsieveDomain  string
+	AWSRegion        string
 }
 
 func LookupEnv() (*Env, error) {
@@ -128,6 +129,10 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	awsRegion, err := shared.NonEmptyFromEnvVar(shared.AWSRegionKey)
+	if err != nil {
+		return nil, err
+	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
 		return nil, err
@@ -144,6 +149,7 @@ func LookupEnv() (*Env, error) {
 		IdempotencyTable: idempotencyTable,
 		TrackingTable:    trackingTable,
 		PennsieveDomain:  pennsieveDomain,
+		AWSRegion:        awsRegion,
 	}, nil
 }
 

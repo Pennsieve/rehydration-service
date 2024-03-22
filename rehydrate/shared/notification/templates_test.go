@@ -19,12 +19,14 @@ func TestRehydrationCompleteEmailBody(t *testing.T) {
 	datasetID := 1234
 	datasetVersionID := 2
 	rehydrationLocation := fmt.Sprintf("s3://bucket/rehydrated/%d/%d", datasetID, datasetVersionID)
+	awsRegion := "us-east-1"
 
-	body, err := RehydrationCompleteEmailBody(datasetID, datasetVersionID, rehydrationLocation)
+	body, err := RehydrationCompleteEmailBody(datasetID, datasetVersionID, rehydrationLocation, awsRegion)
 	require.NoError(t, err)
 	assert.Contains(t, body, "Rehydration Complete")
 	assert.Contains(t, body, rehydrationLocation)
 	assert.Contains(t, body, fmt.Sprintf("Dataset %d version %d", datasetID, datasetVersionID))
+	assert.Contains(t, body, awsRegion)
 
 }
 

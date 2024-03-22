@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/service/handler"
 	"github.com/pennsieve/rehydration-service/service/models"
+	"github.com/pennsieve/rehydration-service/shared"
 	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/notification"
@@ -31,7 +32,8 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 	With("SECURITY_GROUP", "test-sg").
 	With("TASK_DEF_CONTAINER_NAME", "test-rehydrate-fargate-container").
 	With(sharedmodels.ECSTaskEnvKey, "test").
-	With(notification.PennsieveDomainKey, "pennsieve.example.com")
+	With(notification.PennsieveDomainKey, "pennsieve.example.com").
+	With(shared.AWSRegionKey, "test-1")
 
 func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
@@ -223,6 +225,9 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 		Status:              sharedidempotency.Completed,
 		FargateTaskARN:      expectedTaskARN,
 	}
+	// Ideally we would add a test.RequestAssertionFunc for the mock SES server here to test that we are sending
+	// the correct input to SES. But it looks like the AWS client transforms the SendEmail input to a string
+	// that is hard to decode before sending that string to the mock server. So hard to write assertions for it.
 	fixture := NewFixtureBuilder(t).
 		withExpectedMessageID(uuid.NewString()).
 		withIdempotencyTable(completed).
@@ -468,6 +473,8 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 	require.True(t, ok, "env variable %s is not set", tracking.TableNameKey)
 	pennsieveDomainValue, ok := os.LookupEnv(notification.PennsieveDomainKey)
 	require.True(t, ok, "env variable %s is not set", notification.PennsieveDomainKey)
+	awsRegionValue, ok := os.LookupEnv(shared.AWSRegionKey)
+	require.True(t, ok, "env variable %s is not set", shared.AWSRegionKey)
 	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
 	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
 	return map[string]any{
@@ -480,6 +487,7 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 			map[string]any{"name": sharedidempotency.TableNameKey, "value": idempotencyTableValue},
 			map[string]any{"name": tracking.TableNameKey, "value": trackingTableValue},
 			map[string]any{"name": notification.PennsieveDomainKey, "value": pennsieveDomainValue},
+			map[string]any{"name": shared.AWSRegionKey, "value": awsRegionValue},
 		},
 		"name": containerNameValue}
 }

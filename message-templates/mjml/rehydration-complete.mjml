@@ -67,11 +67,27 @@
         </mj-text>
       </mj-column>
     </mj-section>
-        
+
+    <mj-section mj-class="copy-section">
+      <mj-column padding="24px 0 0">
+        <mj-text mj-class="kicker">
+          <strong>Resource Type:</strong> Amazon S3 Bucket (Requester Pays)
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
     <mj-section mj-class="copy-section">
       <mj-column padding="24px 0 0">
         <mj-text mj-class="kicker">
           <strong>Rehydration location:</strong> <code>{{.RehydrationLocation}}</code>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-section mj-class="copy-section">
+      <mj-column padding="24px 0 0">
+        <mj-text mj-class="kicker">
+          <strong>AWS Region:</strong> <code>{{.AWSRegion}}</code>
         </mj-text>
       </mj-column>
     </mj-section>

@@ -25,6 +25,7 @@ type rehydrationCompleteData struct {
 	DatasetID           int
 	DatasetVersionID    int
 	RehydrationLocation string
+	AWSRegion           string
 }
 
 type rehydrationFailedData struct {
@@ -50,11 +51,12 @@ func LoadTemplates() (err error) {
 	return
 }
 
-func RehydrationCompleteEmailBody(datasetID, datasetVersionID int, rehydrationLocation string) (string, error) {
+func RehydrationCompleteEmailBody(datasetID, datasetVersionID int, rehydrationLocation, awsRegion string) (string, error) {
 	return executeTemplate(rehydrationCompleteTemplate, rehydrationCompleteData{
 		DatasetID:           datasetID,
 		DatasetVersionID:    datasetVersionID,
 		RehydrationLocation: rehydrationLocation,
+		AWSRegion:           awsRegion,
 	})
 }
 

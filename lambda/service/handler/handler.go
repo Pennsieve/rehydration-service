@@ -48,7 +48,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 
 	trackingStore := tracking.NewStore(*awsConfig, rehydrationRequest.Logger, taskConfig.TrackingTableName)
 
-	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain)
+	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
 		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)

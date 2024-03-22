@@ -23,6 +23,7 @@ type ECSTaskConfig struct {
 	IdempotencyTableName string
 	TrackingTableName    string
 	PennsieveDomain      string
+	AWSRegion            string
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
@@ -63,6 +64,10 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	awsRegion, err := shared.NonEmptyFromEnvVar(shared.AWSRegionKey)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ECSTaskConfig{
 		TaskDefinitionARN:    taskDefinitionArn,
@@ -74,6 +79,7 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		IdempotencyTableName: idempotencyTable,
 		TrackingTableName:    trackingTable,
 		PennsieveDomain:      pennsieveDomain,
+		AWSRegion:            awsRegion,
 	}, nil
 }
 
@@ -126,6 +132,10 @@ func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmo
 						{
 							Name:  aws.String(notification.PennsieveDomainKey),
 							Value: aws.String(t.PennsieveDomain),
+						},
+						{
+							Name:  aws.String(shared.AWSRegionKey),
+							Value: aws.String(t.AWSRegion),
 						},
 					},
 				},

@@ -10,8 +10,8 @@ import (
 
 func TestLoadTemplates(t *testing.T) {
 	require.NoError(t, LoadTemplates())
-	assert.NotNil(t, RehydrationCompleteTemplate)
-	assert.NotNil(t, RehydrationFailedTemplate)
+	assert.NotNil(t, rehydrationCompleteTemplate)
+	assert.NotNil(t, rehydrationFailedTemplate)
 }
 
 func TestRehydrationCompleteEmailBody(t *testing.T) {

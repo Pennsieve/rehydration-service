@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	awslogging "github.com/aws/smithy-go/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,8 +41,8 @@ func (e *AWSEndpoints) WithDynamoDB() *AWSEndpoints {
 	return e
 }
 
-func (e *AWSEndpoints) WithSQS(sqsURL string) *AWSEndpoints {
-	e.serviceIDToEndpoint[sqs.ServiceID] = aws.Endpoint{URL: sqsURL}
+func (e *AWSEndpoints) WithSES(sesURL string) *AWSEndpoints {
+	e.serviceIDToEndpoint[ses.ServiceID] = aws.Endpoint{URL: sesURL}
 	return e
 }
 

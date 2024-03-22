@@ -7,6 +7,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type ECSTaskConfig struct {
 	Environment          string
 	IdempotencyTableName string
 	TrackingTableName    string
+	PennsieveDomain      string
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
@@ -57,6 +59,10 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	pennsieveDomain, err := shared.NonEmptyFromEnvVar(notification.PennsieveDomainKey)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ECSTaskConfig{
 		TaskDefinitionARN:    taskDefinitionArn,
@@ -67,6 +73,7 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		Environment:          envValue,
 		IdempotencyTableName: idempotencyTable,
 		TrackingTableName:    trackingTable,
+		PennsieveDomain:      pennsieveDomain,
 	}, nil
 }
 
@@ -115,6 +122,10 @@ func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmo
 						{
 							Name:  aws.String(tracking.TableNameKey),
 							Value: aws.String(t.TrackingTableName),
+						},
+						{
+							Name:  aws.String(notification.PennsieveDomainKey),
+							Value: aws.String(t.PennsieveDomain),
 						},
 					},
 				},

@@ -23,7 +23,7 @@ type HTTPTestFixture struct {
 // NewHTTPTestFixture returns a pointer to a new HTTPTestFixture
 // If response is nil, any requests made to the fixture's server will fail the test.
 // If reqAssertionFunc is non-nil and returns false for a given http.Request, the fixture will fail the test.
-// If reqAssertionFunc is nil or returns true, the fixture's server will return the status and body contained in response
+// If reqAssertionFunc is nil or returns true, the fixture's server will return the status and body contained in response.
 // Passing a nil response and non-nil reqAssertionFunc to this function is an error and will cause the test to fail.
 func NewHTTPTestFixture(t require.TestingT, reqAssertionFunc RequestAssertionFunc, response *HTTPTestResponse) HTTPTestFixture {
 	require.False(t, reqAssertionFunc != nil && response == nil,

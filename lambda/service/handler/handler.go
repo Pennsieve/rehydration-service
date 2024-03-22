@@ -12,6 +12,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
 	"github.com/pennsieve/rehydration-service/shared/logging"
+	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"net/http"
@@ -24,13 +25,13 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	taskConfig, err := models.TaskConfigFromEnvironment()
 	if err != nil {
 		logger.Error("error getting ECS task configuration from environment variables", "error", err)
-		return errorResponse(500, err, lambdaRequest)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	awsConfig, err := AWSConfigFactory.Get(ctx)
 	if err != nil {
 		logger.Error("error getting AWS config", "error", err)
-		return errorResponse(500, err, lambdaRequest)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	ecsHandler := ecs.NewHandler(*awsConfig, taskConfig)
@@ -42,10 +43,17 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		if errors.As(err, &badRequest) {
 			return errorResponse(http.StatusBadRequest, err, lambdaRequest)
 		}
-		return errorResponse(500, err, lambdaRequest)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	trackingStore := tracking.NewStore(*awsConfig, rehydrationRequest.Logger, taskConfig.TrackingTableName)
+
+	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain)
+	if err != nil {
+		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
+		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+	}
 
 	idempotencyConfig := idempotency.Config{
 		AWSConfig:        *awsConfig,
@@ -73,8 +81,8 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	completionLogAttrs := []any{slog.String("fargateTaskARN", out.TaskARN)}
 	if len(out.RehydrationLocation) != 0 {
 		// this will only be true if this request is for an already completed, non-expired rehydration
-		rehydrationRequest.WriteNewCompletedRequest(ctx, trackingStore, out.TaskARN)
-		// TODO send email from here. Fargate takes care of sending emails for any requests with InProgress status but if we are here that's in the past.
+		emailSentDate := rehydrationRequest.SendCompletedEmail(ctx, emailer, out.RehydrationLocation)
+		rehydrationRequest.WriteNewCompletedRequest(ctx, trackingStore, out.TaskARN, emailSentDate)
 		completionLogAttrs = append(completionLogAttrs, slog.String("rehydrationLocation", out.RehydrationLocation))
 	} else {
 		rehydrationRequest.WriteNewInProgressRequest(ctx, trackingStore, out.TaskARN)

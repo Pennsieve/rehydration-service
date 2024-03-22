@@ -12,6 +12,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/models"
 	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,8 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 	With("CLUSTER_ARN", "test-cluster-arn").
 	With("SECURITY_GROUP", "test-sg").
 	With("TASK_DEF_CONTAINER_NAME", "test-rehydrate-fargate-container").
-	With("ENV", "test")
+	With(sharedmodels.ECSTaskEnvKey, "test").
+	With(notification.PennsieveDomainKey, "pennsieve.example.com")
 
 func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
@@ -209,6 +211,11 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
+	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
+	request := models.Request{
+		Dataset: dataset,
+		User:    user,
+	}
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 	completed := sharedidempotency.Record{
 		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
@@ -217,16 +224,12 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 		FargateTaskARN:      expectedTaskARN,
 	}
 	fixture := NewFixtureBuilder(t).
+		withExpectedMessageID(uuid.NewString()).
 		withIdempotencyTable(completed).
 		withTrackingTable().
 		build()
 	defer fixture.teardown()
 
-	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
-	request := models.Request{
-		Dataset: dataset,
-		User:    user,
-	}
 	lambdaRequest := newLambdaRequest(requestToBody(t, request))
 	ctx := context.Background()
 
@@ -258,7 +261,9 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	assert.Equal(t, expectedTaskARN, entry.FargateTaskARN)
 	assert.False(t, beforeRequest.After(entry.RequestDate))
 	assert.False(t, afterRequest.Before(entry.RequestDate))
-	assert.Nil(t, entry.EmailSentDate)
+	assert.NotNil(t, entry.EmailSentDate)
+	assert.False(t, beforeRequest.After(*entry.EmailSentDate))
+	assert.False(t, afterRequest.Before(*entry.EmailSentDate))
 	// Don't know the expected value of this without access to the RehydrationRequest object.
 	assert.NotEmpty(t, entry.ID)
 }
@@ -375,16 +380,26 @@ func taskARNResponse(t require.TestingT, expectedTaskARN string) *test.HTTPTestR
 	return &test.HTTPTestResponse{Body: respBody}
 }
 
+func emailMessageIDResponse(t require.TestingT, expectedMessageID string) *test.HTTPTestResponse {
+	respMap := map[string]*string{"messageId": aws.String(expectedMessageID)}
+	respBytes, err := json.Marshal(respMap)
+	require.NoError(t, err)
+	respBody := string(respBytes)
+	return &test.HTTPTestResponse{Body: respBody}
+}
+
 type Fixture struct {
 	awsConfig        aws.Config
-	mockECS2         test.HTTPTestFixture
+	mockECS          test.HTTPTestFixture
+	mockSES          test.HTTPTestFixture
 	dyDB             *test.DynamoDBFixture
 	idempotencyTable string
 	trackingTable    string
 }
 
 func (f *Fixture) teardown() {
-	f.mockECS2.Teardown()
+	f.mockECS.Teardown()
+	f.mockSES.Teardown()
 	if f.dyDB != nil {
 		f.dyDB.Teardown()
 	}
@@ -396,6 +411,7 @@ type FixtureBuilder struct {
 	logAWSRequests          bool
 	mockECSResponse         *test.HTTPTestResponse
 	ecsRequestAssertionFunc test.RequestAssertionFunc
+	mockSESResponse         *test.HTTPTestResponse
 	createTableInputs       []*dynamodb.CreateTableInput
 	putItemInputs           []*dynamodb.PutItemInput
 	idempotencyTableName    string
@@ -450,6 +466,8 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 	require.True(t, ok, "env variable %s is not set", sharedidempotency.TableNameKey)
 	trackingTableValue, ok := os.LookupEnv(tracking.TableNameKey)
 	require.True(t, ok, "env variable %s is not set", tracking.TableNameKey)
+	pennsieveDomainValue, ok := os.LookupEnv(notification.PennsieveDomainKey)
+	require.True(t, ok, "env variable %s is not set", notification.PennsieveDomainKey)
 	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
 	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
 	return map[string]any{
@@ -460,7 +478,9 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 			map[string]any{"name": sharedmodels.ECSTaskUserNameKey, "value": rehydrationReq.User.Name},
 			map[string]any{"name": sharedmodels.ECSTaskUserEmailKey, "value": rehydrationReq.User.Email},
 			map[string]any{"name": sharedidempotency.TableNameKey, "value": idempotencyTableValue},
-			map[string]any{"name": tracking.TableNameKey, "value": trackingTableValue}},
+			map[string]any{"name": tracking.TableNameKey, "value": trackingTableValue},
+			map[string]any{"name": notification.PennsieveDomainKey, "value": pennsieveDomainValue},
+		},
 		"name": containerNameValue}
 }
 
@@ -468,6 +488,11 @@ func assertECSContainerOverridesEqual(t require.TestingT, expected map[string]an
 	expectedName, actualName := expected["name"], actual["name"]
 	expectedEnv, actualEnv := expected["environment"], actual["environment"]
 	return assert.Equal(t, expectedName, actualName) && assert.ElementsMatch(t, expectedEnv, actualEnv)
+}
+
+func (b *FixtureBuilder) withExpectedMessageID(messageID string) *FixtureBuilder {
+	b.mockSESResponse = emailMessageIDResponse(b.testingT, messageID)
+	return b
 }
 
 func (b *FixtureBuilder) withIdempotencyTable(records ...sharedidempotency.Record) *FixtureBuilder {
@@ -505,10 +530,12 @@ func (b *FixtureBuilder) withLoggedAWSRequests() *FixtureBuilder {
 
 func (b *FixtureBuilder) build() *Fixture {
 	mockECS := test.NewHTTPTestFixture(b.testingT, b.ecsRequestAssertionFunc, b.mockECSResponse)
+	mockSES := test.NewHTTPTestFixture(b.testingT, nil, b.mockSESResponse)
 
 	awsConfig := test.NewAWSEndpoints(b.testingT).
 		WithDynamoDB().
 		WithECS(mockECS.Server.URL).
+		WithSES(mockSES.Server.URL).
 		Config(context.Background(), b.logAWSRequests)
 	handler.AWSConfigFactory.Set(&awsConfig)
 
@@ -516,7 +543,7 @@ func (b *FixtureBuilder) build() *Fixture {
 
 	return &Fixture{
 		awsConfig:        awsConfig,
-		mockECS2:         mockECS,
+		mockECS:          mockECS,
 		dyDB:             dyDB,
 		idempotencyTable: b.idempotencyTableName,
 		trackingTable:    b.trackingTableName,

@@ -9,6 +9,8 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/models"
 )
 
+const PennsieveDomainKey = "PENNSIEVE_DOMAIN"
+
 type SESEmailer struct {
 	client  *ses.Client
 	sender  string

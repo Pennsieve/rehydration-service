@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
+	"log/slog"
 	"time"
 )
 
@@ -22,7 +23,12 @@ func (h *TaskHandler) emailAndLog(ctx context.Context, indexEntries []tracking.D
 		emailSentDate, alreadySent := emailedAddresses[qr.UserEmail]
 		if !alreadySent {
 			var err error
-			if emailSentDate, err = h.sendEmail(ctx, qr); err != nil {
+			if emailSentDate, err = h.sendEmail(ctx, qr); err == nil {
+				// store the non-nil sent date to prevent more than one email per address
+				emailedAddresses[qr.UserEmail] = emailSentDate
+				h.DatasetRehydrator.logger.Info("sent email", slog.String("status", string(rehydrationStatus)),
+					slog.Time("time", *emailSentDate))
+			} else {
 				errs = append(errs, fmt.Errorf("error sending %s email to %s (%s): %w",
 					rehydrationStatus,
 					qr.UserName,
@@ -31,9 +37,6 @@ func (h *TaskHandler) emailAndLog(ctx context.Context, indexEntries []tracking.D
 				// If the email failed, still want to update the tracking log below. Since we don't think the
 				// email was sent, explicitly setting sent date to nil to capture that.
 				emailSentDate = nil
-			} else {
-				// store the non-nil sent date to prevent more than one email per address
-				emailedAddresses[qr.UserEmail] = emailSentDate
 			}
 		}
 		if err := h.TrackingStore.EmailSent(ctx, qr.ID, emailSentDate, rehydrationStatus); err != nil {

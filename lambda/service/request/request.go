@@ -133,5 +133,7 @@ func (r *RehydrationRequest) SendCompletedEmail(ctx context.Context, emailer not
 		return nil
 	}
 	emailSent := time.Now()
+	r.Logger.Info("sent rehydration completed email",
+		slog.Time("time", emailSent))
 	return &emailSent
 }

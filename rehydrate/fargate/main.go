@@ -68,11 +68,11 @@ func RehydrationTaskHandler(ctx context.Context, taskHandler *TaskHandler) error
 		errs = append(errs, taskHandler.failed(ctx)...)
 		return errors.Join(errs...)
 	}
-	for _, notificationError := range taskHandler.completed(ctx, results.Location) {
+	for _, finalizeError := range taskHandler.completed(ctx, results.Location) {
 		// there are no real rehydration failures. So we just log idempotency/tracking/notification errors if there are any
-		taskHandler.DatasetRehydrator.logger.Error(
+		taskHandler.DatasetRehydrator.logger.Warn(
 			"rehydration succeeded but there were non-fatal errors",
-			slog.Any("error", notificationError))
+			slog.Any("error", finalizeError))
 	}
 	return nil
 }

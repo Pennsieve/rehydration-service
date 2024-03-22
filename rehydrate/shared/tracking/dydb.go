@@ -34,7 +34,7 @@ func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyD
 	}
 }
 
-func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time.Time, status RehydrationStatus) error {
+func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate *time.Time, status RehydrationStatus) error {
 	expressionAttrNames := map[string]string{
 		"#emailSentDate": EmailSentDateAttrName,
 		"#status":        RehydrationStatusAttrName,
@@ -42,7 +42,7 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time
 	temp := &Entry{
 		DatasetVersionIndex: DatasetVersionIndex{
 			RehydrationStatus: status,
-			EmailSentDate:     &emailSentDate,
+			EmailSentDate:     emailSentDate,
 		},
 	}
 	expressionValues, err := temp.Item()

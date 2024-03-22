@@ -82,7 +82,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 
 	emailSentDate := time.Now().Add(time.Hour * 7)
 	expectedStatus := tracking.Completed
-	require.NoError(t, store.EmailSent(ctx, expectedID, emailSentDate, expectedStatus))
+	require.NoError(t, store.EmailSent(ctx, expectedID, &emailSentDate, expectedStatus))
 
 	items := dyDB.Scan(ctx, testTableName)
 	require.Len(t, items, 1)
@@ -101,7 +101,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 	AssertEqualAttributeValueString(t, origEntry.RequestDate.Format(time.RFC3339Nano), updatedItem[tracking.RequestDateAttrName])
 
 	// A second try should fail
-	err := store.EmailSent(ctx, expectedID, emailSentDate, expectedStatus)
+	err := store.EmailSent(ctx, expectedID, &emailSentDate, expectedStatus)
 	var alreadyExistsError *tracking.EntryAlreadyExistsError
 	if assert.ErrorAs(t, err, &alreadyExistsError) {
 		assert.NoError(t, alreadyExistsError.UnmarshallingError)

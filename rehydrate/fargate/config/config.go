@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"strconv"
@@ -24,6 +25,7 @@ type Config struct {
 	idempotencyStore idempotency.Store
 	objectProcessor  objects.Processor
 	trackingStore    tracking.Store
+	emailer          notification.Emailer
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -82,6 +84,22 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 	c.objectProcessor = objectProcessor
 }
 
+func (c *Config) Emailer() (notification.Emailer, error) {
+	if c.emailer == nil {
+		emailer, err := notification.NewEmailer(c.AWSConfig, c.Env.PennsieveDomain)
+		if err != nil {
+			return nil, err
+		}
+		c.emailer = emailer
+	}
+	return c.emailer, nil
+}
+
+// SetEmailer is for use in tests that would like to override the real emailer with a mock implementation
+func (c *Config) SetEmailer(emailer notification.Emailer) {
+	c.emailer = emailer
+}
+
 type Env struct {
 	Dataset          *models.Dataset
 	User             *models.User
@@ -89,6 +107,7 @@ type Env struct {
 	PennsieveHost    string
 	IdempotencyTable string
 	TrackingTable    string
+	PennsieveDomain  string
 }
 
 func LookupEnv() (*Env, error) {
@@ -102,6 +121,10 @@ func LookupEnv() (*Env, error) {
 		return nil, err
 	}
 	trackingTable, err := shared.NonEmptyFromEnvVar(tracking.TableNameKey)
+	if err != nil {
+		return nil, err
+	}
+	pennsieveDomain, err := shared.NonEmptyFromEnvVar(notification.PennsieveDomainKey)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +143,7 @@ func LookupEnv() (*Env, error) {
 		PennsieveHost:    pennsieveHost,
 		IdempotencyTable: idempotencyTable,
 		TrackingTable:    trackingTable,
+		PennsieveDomain:  pennsieveDomain,
 	}, nil
 }
 

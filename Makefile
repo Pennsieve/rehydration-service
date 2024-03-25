@@ -51,7 +51,7 @@ test: local-services email-templates
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
 # Run dockerized tests (used on Jenkins)
-test-ci: docker-clean email-templates
+test-ci: docker-clean
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
@@ -64,7 +64,7 @@ docker-clean:
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
 
-package: email-templates
+package:
 	@echo ""
 	@echo "***********************"
 	@echo "*   Building Rehydrate Trigger lambda   *"

@@ -27,7 +27,9 @@ func (h *TaskHandler) emailAndLog(ctx context.Context, indexEntries []tracking.D
 				// store the non-nil sent date to prevent more than one email per address
 				emailedAddresses[qr.UserEmail] = emailSentDate
 				h.DatasetRehydrator.logger.Info("sent email", slog.String("status", string(rehydrationStatus)),
-					slog.Time("time", *emailSentDate))
+					slog.Time("time", *emailSentDate),
+					slog.String("address", qr.UserEmail),
+					slog.String("addressee", qr.UserName))
 			} else {
 				errs = append(errs, fmt.Errorf("error sending %s email to %s (%s): %w",
 					rehydrationStatus,

@@ -80,6 +80,7 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:DeleteItem",
+      "dynamodb:Query",
     ]
 
     resources = [

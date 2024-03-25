@@ -35,7 +35,7 @@ npm-install:
 $(HTML_DIR)/%.html: $(MJML_DIR)/%.mjml
 		./node_modules/mjml/bin/mjml $< -o $@
 
-email-templates: html-clean $(patsubst $(MJML_DIR)/%.mjml, $(HTML_DIR)/%.html, $(MJML_SRCS))
+email-templates: npm-install html-clean $(patsubst $(MJML_DIR)/%.mjml, $(HTML_DIR)/%.html, $(MJML_SRCS))
 
 html-clean:
 	rm -f $(HTML_DIR)/*

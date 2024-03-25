@@ -18,8 +18,8 @@ type DyDBStore struct {
 	logger *slog.Logger
 }
 
-func NewStore(config aws.Config, logger *slog.Logger, tableName string) (Store, error) {
-	return newDyDBStore(config, logger, tableName), nil
+func NewStore(config aws.Config, logger *slog.Logger, tableName string) Store {
+	return newDyDBStore(config, logger, tableName)
 }
 
 func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyDBStore {

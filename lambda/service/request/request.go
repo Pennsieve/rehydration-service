@@ -1,14 +1,18 @@
 package request
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
+	"time"
 )
 
 type RehydrationRequest struct {
@@ -18,6 +22,8 @@ type RehydrationRequest struct {
 	lambdaRequest       events.APIGatewayV2HTTPRequest
 	lambdaLogStreamName string
 	awsRequestID        string
+	requestID           string
+	trackingEntry       *tracking.Entry
 }
 
 type BadRequestError struct {
@@ -45,7 +51,9 @@ func validateRequest(request models.Request) *BadRequestError {
 }
 
 func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest) (*RehydrationRequest, error) {
+	requestID := uuid.NewString()
 	awsRequestID := lambdaRequest.RequestContext.RequestID
+	lambdaLogStreamName := lambdacontext.LogStreamName
 
 	logging.Default.Info("handling request", slog.String("body", lambdaRequest.Body))
 	var request models.Request
@@ -57,16 +65,59 @@ func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest) (*Rehyd
 	}
 	dataset, user := request.Dataset, request.User
 
-	requestLogger := logging.Default.With(slog.String("requestID", awsRequestID),
+	requestLogger := logging.Default.With(slog.String("awsRequestID", awsRequestID),
+		slog.String("requestID", requestID),
 		slog.Group("dataset", slog.Int("id", dataset.ID), slog.Int("versionId", dataset.VersionID)),
 		slog.Group("user", slog.String("name", user.Name), slog.String("email", user.Email)))
+
+	trackingEntry := &tracking.Entry{
+		DatasetVersionIndex: tracking.DatasetVersionIndex{
+			ID:             requestID,
+			DatasetVersion: dataset.DatasetVersion(),
+			UserName:       user.Name,
+			UserEmail:      user.Email,
+		},
+		LambdaLogStream: lambdaLogStreamName,
+		AWSRequestID:    awsRequestID,
+		RequestDate:     time.Now(),
+	}
 
 	return &RehydrationRequest{
 		Dataset:             dataset,
 		User:                user,
 		Logger:              requestLogger,
 		lambdaRequest:       lambdaRequest,
-		lambdaLogStreamName: lambdacontext.LogStreamName,
+		lambdaLogStreamName: lambdaLogStreamName,
 		awsRequestID:        awsRequestID,
+		requestID:           requestID,
+		trackingEntry:       trackingEntry,
 	}, nil
+}
+
+func (r *RehydrationRequest) WriteNewUnknownRequest(ctx context.Context, trackingStore tracking.Store) {
+	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.Unknown)
+}
+
+func (r *RehydrationRequest) WriteNewInProgressRequest(ctx context.Context, trackingStore tracking.Store, fargateTaskARN string) {
+	r.trackingEntry.FargateTaskARN = fargateTaskARN
+	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.InProgress)
+}
+
+func (r *RehydrationRequest) WriteNewCompletedRequest(ctx context.Context, trackingStore tracking.Store, fargateTaskARN string) {
+	r.trackingEntry.FargateTaskARN = fargateTaskARN
+	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.Completed)
+}
+
+func (r *RehydrationRequest) WriteNewExpiredRequest(ctx context.Context, trackingStore tracking.Store) {
+	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.Expired)
+}
+
+func (r *RehydrationRequest) writeTrackingEntryWithStatus(ctx context.Context, trackingStore tracking.Store, status tracking.RehydrationStatus) {
+	r.trackingEntry.RehydrationStatus = status
+	if err := trackingStore.PutEntry(ctx, r.trackingEntry); err != nil {
+		// don't want to fail request if we can't write to tracking table
+		r.Logger.Warn("error writing rehydration status to tracking table",
+			slog.Any("rehydrationStatus", status),
+			slog.Any("error", err))
+	}
 }

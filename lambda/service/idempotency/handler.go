@@ -24,16 +24,13 @@ type Handler struct {
 	ecsHandler ecs.Handler
 }
 
-func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) (*Handler, error) {
-	store, err := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
-	if err != nil {
-		return nil, err
-	}
+func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) *Handler {
+	store := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
 	return &Handler{
 		store:      store,
 		request:    req,
 		ecsHandler: ecsHandler,
-	}, nil
+	}
 }
 
 type Response struct {
@@ -115,7 +112,8 @@ func (h *Handler) handleForStatus(record *idempotency.Record) (*Response, error)
 	case idempotency.Expired:
 		return nil, ExpiredError{fmt.Sprintf("rehydration expiration in progress for %s", record.ID)}
 	case idempotency.InProgress:
-		return nil, InProgressError{fmt.Sprintf("rehydration already in progress for %s", record.ID)}
+		// Treat this as normal and not an error. Tracking entry will be written and user notified when rehydration complete
+		return &Response{TaskARN: record.FargateTaskARN}, nil
 	default:
 		return &Response{
 			RehydrationLocation: record.RehydrationLocation,
@@ -145,14 +143,6 @@ type InconsistentStateError struct {
 }
 
 func (e InconsistentStateError) Error() string {
-	return e.message
-}
-
-type InProgressError struct {
-	message string
-}
-
-func (e InProgressError) Error() string {
 	return e.message
 }
 

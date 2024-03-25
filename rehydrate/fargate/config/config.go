@@ -7,11 +7,12 @@ import (
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
+	"github.com/pennsieve/rehydration-service/shared"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
-	"os"
 	"strconv"
 )
 
@@ -22,6 +23,7 @@ type Config struct {
 	pennsieveClient  *pennsieve.Client
 	idempotencyStore idempotency.Store
 	objectProcessor  objects.Processor
+	trackingStore    tracking.Store
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -42,20 +44,30 @@ func (c *Config) PennsieveClient() *pennsieve.Client {
 	return c.pennsieveClient
 }
 
-func (c *Config) IdempotencyStore() (idempotency.Store, error) {
+func (c *Config) IdempotencyStore() idempotency.Store {
 	if c.idempotencyStore == nil {
-		store, err := idempotency.NewStore(c.AWSConfig, c.Logger, c.Env.IdempotencyTable)
-		if err != nil {
-			return nil, err
-		}
+		store := idempotency.NewStore(c.AWSConfig, c.Logger, c.Env.IdempotencyTable)
 		c.idempotencyStore = store
 	}
-	return c.idempotencyStore, nil
+	return c.idempotencyStore
 }
 
 // SetIdempotencyStore is for use in tests that would like to override the real store with a mock implementation
 func (c *Config) SetIdempotencyStore(store idempotency.Store) {
 	c.idempotencyStore = store
+}
+
+func (c *Config) TrackingStore() tracking.Store {
+	if c.trackingStore == nil {
+		store := tracking.NewStore(c.AWSConfig, c.Logger, c.Env.TrackingTable)
+		c.trackingStore = store
+	}
+	return c.trackingStore
+}
+
+// SetTrackingStore is for use in tests that would like to override the real store with a mock implementation
+func (c *Config) SetTrackingStore(store tracking.Store) {
+	c.trackingStore = store
 }
 
 func (c *Config) ObjectProcessor(thresholdSize int64) objects.Processor {
@@ -76,18 +88,22 @@ type Env struct {
 	TaskEnv          string
 	PennsieveHost    string
 	IdempotencyTable string
+	TrackingTable    string
 }
 
 func LookupEnv() (*Env, error) {
-	env := os.Getenv(models.ECSTaskEnvKey)
-	if len(env) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty", models.ECSTaskEnvKey)
+	env, err := shared.NonEmptyFromEnvVar(models.ECSTaskEnvKey)
+	if err != nil {
+		return nil, err
 	}
 	pennsieveHost := utils.GetApiHost(env)
-	table := os.Getenv(idempotency.TableNameKey)
-	if len(table) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			idempotency.TableNameKey)
+	idempotencyTable, err := shared.NonEmptyFromEnvVar(idempotency.TableNameKey)
+	if err != nil {
+		return nil, err
+	}
+	trackingTable, err := shared.NonEmptyFromEnvVar(tracking.TableNameKey)
+	if err != nil {
+		return nil, err
 	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
@@ -102,18 +118,25 @@ func LookupEnv() (*Env, error) {
 		User:             user,
 		TaskEnv:          env,
 		PennsieveHost:    pennsieveHost,
-		IdempotencyTable: table,
+		IdempotencyTable: idempotencyTable,
+		TrackingTable:    trackingTable,
 	}, nil
 }
 
 func datasetFromEnv() (*models.Dataset, error) {
-	datasetIdString := os.Getenv(models.ECSTaskDatasetIDKey)
+	datasetIdString, err := shared.NonEmptyFromEnvVar(models.ECSTaskDatasetIDKey)
+	if err != nil {
+		return nil, err
+	}
 	datasetId, err := strconv.Atoi(datasetIdString)
 	if err != nil {
 		return nil, fmt.Errorf("error converting env var %s value [%s] to int: %w",
 			models.ECSTaskDatasetIDKey, datasetIdString, err)
 	}
-	datasetVersionIdString := os.Getenv(models.ECSTaskDatasetVersionIDKey)
+	datasetVersionIdString, err := shared.NonEmptyFromEnvVar(models.ECSTaskDatasetVersionIDKey)
+	if err != nil {
+		return nil, err
+	}
 	versionId, err := strconv.Atoi(datasetVersionIdString)
 	if err != nil {
 		return nil, fmt.Errorf("error converting env var %s value [%s] to int: %w",
@@ -126,15 +149,13 @@ func datasetFromEnv() (*models.Dataset, error) {
 }
 
 func userFromEnv() (*models.User, error) {
-	userName := os.Getenv(models.ECSTaskUserNameKey)
-	if len(userName) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			models.ECSTaskUserNameKey)
+	userName, err := shared.NonEmptyFromEnvVar(models.ECSTaskUserNameKey)
+	if err != nil {
+		return nil, err
 	}
-	userEmail := os.Getenv(models.ECSTaskUserEmailKey)
-	if len(userEmail) == 0 {
-		return nil, fmt.Errorf("env var %s value is empty",
-			models.ECSTaskUserEmailKey)
+	userEmail, err := shared.NonEmptyFromEnvVar(models.ECSTaskUserEmailKey)
+	if err != nil {
+		return nil, err
 	}
 	return &models.User{
 		Name:  userName,

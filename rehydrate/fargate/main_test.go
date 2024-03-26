@@ -64,22 +64,49 @@ func TestRehydrationTaskHandler(t *testing.T) {
 				Name:  "Guy Sur",
 				Email: "sur@example.com",
 			}
-			alreadyHandledRequestDate := time.Now().Add(-time.Hour * 24)
-			alreadyHandledEmailSentData := alreadyHandledRequestDate.Add(time.Hour * 12)
-			alreadyHandledEntry := &tracking.Entry{
+
+			oldEntriesByID := map[string]*tracking.Entry{}
+
+			// An old entry for a previous, completed rehydration of the same dataset
+			// Should be left untouched and no email sent.
+			oldCompletedRequestDate := time.Now().Add(-time.Hour * 24)
+			oldCompletedEmailSentDate := oldCompletedRequestDate.Add(time.Hour * 12)
+			oldCompletedEntry := &tracking.Entry{
 				DatasetVersionIndex: tracking.DatasetVersionIndex{
 					ID:                uuid.NewString(),
 					DatasetVersion:    dataset.DatasetVersion(),
 					UserName:          "Hal Blaine",
 					UserEmail:         "hb@example.com",
 					RehydrationStatus: tracking.Completed,
-					EmailSentDate:     &alreadyHandledEmailSentData,
+					EmailSentDate:     &oldCompletedEmailSentDate,
 				},
 				LambdaLogStream: uuid.NewString(),
 				AWSRequestID:    uuid.NewString(),
-				RequestDate:     alreadyHandledRequestDate,
+				RequestDate:     oldCompletedRequestDate,
 				FargateTaskARN:  uuid.NewString(),
 			}
+			oldEntriesByID[oldCompletedEntry.ID] = oldCompletedEntry
+			// An old entry for a previous, failed rehydration of the same dataset
+			// Should be left untouched and no email sent.
+			// This situation, where the status is Failed, but there is no emailSentDate
+			// should be an exceptional case: The rehydration ended in failure, but there
+			// was also an error when sending the failure notification email.
+			oldFailedRequestDate := time.Now().Add(-time.Hour * 24)
+			oldFailedEntry := &tracking.Entry{
+				DatasetVersionIndex: tracking.DatasetVersionIndex{
+					ID:                uuid.NewString(),
+					DatasetVersion:    dataset.DatasetVersion(),
+					UserName:          "Harry Gorman",
+					UserEmail:         "gorman@example.com",
+					RehydrationStatus: tracking.Failed,
+				},
+				LambdaLogStream: uuid.NewString(),
+				AWSRequestID:    uuid.NewString(),
+				RequestDate:     oldFailedRequestDate,
+				FargateTaskARN:  uuid.NewString(),
+			}
+			oldEntriesByID[oldFailedEntry.ID] = oldFailedEntry
+			// New entries for this rehydration. Should be updated and emails sent.
 			unhandledEntries := []test.Itemer{
 				tracking.NewEntry(uuid.NewString(), *dataset, *taskEnv.User, uuid.NewString(), uuid.NewString(), expectedTaskARN),
 				tracking.NewEntry(uuid.NewString(), *dataset, user2, uuid.NewString(), uuid.NewString(), expectedTaskARN),
@@ -92,7 +119,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 				unhandledEntriesByID[asEntry.ID] = asEntry
 				unhandledEntriesByEmail[asEntry.UserEmail] = append(unhandledEntriesByEmail[asEntry.UserEmail], asEntry)
 			}
-			allEntries := append(unhandledEntries, alreadyHandledEntry)
+			allEntries := append(unhandledEntries, oldCompletedEntry, oldFailedEntry)
 			putItemInputs = append(putItemInputs, test.ItemersToPutItemInputs(t, taskEnv.TrackingTable, allEntries...)...)
 
 			dyDB := test.NewDynamoDBFixture(
@@ -134,22 +161,30 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			assert.Equal(t, expectedRehydrationLocation, updatedIdempotencyRecord.RehydrationLocation)
 
 			trackingItems := dyDB.Scan(ctx, taskEnv.TrackingTable)
-			require.Len(t, trackingItems, 4)
+			require.Len(t, trackingItems, len(allEntries))
 			for _, trackingItem := range trackingItems {
 				entry, err := tracking.FromItem(trackingItem)
 				require.NoError(t, err)
+				//DatasetVersion should be the same for all the entries
 				assert.Equal(t, taskEnv.Dataset.DatasetVersion(), entry.DatasetVersion)
-				assert.Equal(t, tracking.Completed, entry.RehydrationStatus)
-				assert.NotNil(t, entry.EmailSentDate)
 				var expected *tracking.Entry
 				updatedEntry, previouslyUnhandled := unhandledEntriesByID[entry.ID]
 				if previouslyUnhandled {
 					expected = updatedEntry
+					assert.NotNil(t, entry.EmailSentDate)
 					assert.False(t, beforeTask.After(*entry.EmailSentDate))
 					assert.False(t, afterTask.Before(*entry.EmailSentDate))
+					assert.Equal(t, tracking.Completed, entry.RehydrationStatus)
 				} else {
-					expected = alreadyHandledEntry
-					assert.True(t, expected.EmailSentDate.Equal(*entry.EmailSentDate))
+					assert.Contains(t, oldEntriesByID, entry.ID)
+					expected = oldEntriesByID[entry.ID]
+					// old entries should not have there emailSentDate updated
+					if expected.RehydrationStatus == tracking.Failed {
+						assert.Nil(t, entry.EmailSentDate)
+					} else {
+						assert.True(t, expected.EmailSentDate.Equal(*entry.EmailSentDate))
+					}
+					assert.Equal(t, expected.RehydrationStatus, entry.RehydrationStatus)
 				}
 				assert.Equal(t, expected.UserName, entry.UserName)
 				assert.Equal(t, expected.UserEmail, entry.UserEmail)

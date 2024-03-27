@@ -4,6 +4,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 )
 
 type ClientBuilder[T any] func(config aws.Config) *T
@@ -41,4 +42,8 @@ var S3ClientBuilder = func(config aws.Config) *s3.Client {
 
 var DyDBClientBuilder = func(config aws.Config) *dynamodb.Client {
 	return dynamodb.NewFromConfig(config)
+}
+
+var SESClientBuilder = func(config aws.Config) *ses.Client {
+	return ses.NewFromConfig(config)
 }

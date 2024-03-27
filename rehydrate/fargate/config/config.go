@@ -5,6 +5,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
@@ -30,6 +31,7 @@ type Config struct {
 	emailer           notification.Emailer
 	s3ClientFactory   *awsclient.Factory[s3.Client]
 	dyDBClientFactory *awsclient.Factory[dynamodb.Client]
+	sesClientFactory  *awsclient.Factory[ses.Client]
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -42,6 +44,7 @@ func NewConfig(awsConfig aws.Config, env *Env) *Config {
 		Logger:            logger,
 		s3ClientFactory:   awsclient.NewFactory(awsclient.S3ClientBuilder),
 		dyDBClientFactory: awsclient.NewFactory(awsclient.DyDBClientBuilder),
+		sesClientFactory:  awsclient.NewFactory(awsclient.SESClientBuilder),
 	}
 }
 
@@ -93,7 +96,7 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 
 func (c *Config) Emailer() (notification.Emailer, error) {
 	if c.emailer == nil {
-		emailer, err := notification.NewEmailer(c.AWSConfig, c.Env.PennsieveDomain, c.Env.AWSRegion)
+		emailer, err := notification.NewEmailer(c.sesClientFactory.Get(c.AWSConfig), c.Env.PennsieveDomain, c.Env.AWSRegion)
 		if err != nil {
 			return nil, err
 		}

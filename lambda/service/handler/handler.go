@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/pennsieve/rehydration-service/service/ecs"
 	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
@@ -48,10 +49,11 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	}
 
 	dyDBClient := dynamodb.NewFromConfig(*awsConfig)
+	sesClient := ses.NewFromConfig(*awsConfig)
 
 	trackingStore := tracking.NewStore(dyDBClient, rehydrationRequest.Logger, taskConfig.TrackingTableName)
 
-	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
+	emailer, err := notification.NewEmailer(sesClient, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
 		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)

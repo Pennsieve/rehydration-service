@@ -18,11 +18,10 @@ type SESEmailer struct {
 	awsRegion string
 }
 
-func NewEmailer(awsConfig aws.Config, pennsieveDomain string, awsRegion string) (Emailer, error) {
+func NewEmailer(client *ses.Client, pennsieveDomain string, awsRegion string) (Emailer, error) {
 	if err := LoadTemplates(); err != nil {
 		return nil, err
 	}
-	client := ses.NewFromConfig(awsConfig)
 	sender := fmt.Sprintf("support@%s", pennsieveDomain)
 	return &SESEmailer{
 		client:    client,

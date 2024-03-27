@@ -14,8 +14,9 @@ var testIdempotencyTableName = "test-idempotency-table"
 func TestStore_PutRecord(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table))
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName))
 	defer dyDB.Teardown()
 
 	record := Record{
@@ -37,7 +38,8 @@ func TestStore_PutRecord(t *testing.T) {
 func TestStore_GetRecord(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:                  "1/2/",
@@ -45,7 +47,7 @@ func TestStore_GetRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.ItemersToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName)).WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, &record)...)
 	defer dyDB.Teardown()
 
 	actual, err := store.GetRecord(ctx, record.ID)
@@ -61,14 +63,15 @@ func TestStore_GetRecord(t *testing.T) {
 func TestStore_UpdateRecord(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:     "1/2/",
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.ItemersToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName)).WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, &record)...)
 	defer dyDB.Teardown()
 
 	updatedLocation := "bucket/1/2/"
@@ -79,7 +82,7 @@ func TestStore_UpdateRecord(t *testing.T) {
 	err := store.UpdateRecord(ctx, record)
 	require.NoError(t, err)
 
-	scanAll := dyDB.Scan(ctx, store.table)
+	scanAll := dyDB.Scan(ctx, testIdempotencyTableName)
 	require.Len(t, scanAll, 1)
 	scanned, err := FromItem(scanAll[0])
 	require.NoError(t, err)
@@ -91,21 +94,22 @@ func TestStore_UpdateRecord(t *testing.T) {
 func TestStore_SetTaskARN(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
 
 	record := Record{
 		ID:     "1/2/",
 		Status: InProgress,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.ItemersToPutItemInputs(t, store.table, &record)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName)).WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, &record)...)
 	defer dyDB.Teardown()
 
 	taskARN := "arn:aws:ecs:test:test:test"
 	err := store.SetTaskARN(ctx, record.ID, taskARN)
 	require.NoError(t, err)
 
-	scanAll := dyDB.Scan(ctx, store.table)
+	scanAll := dyDB.Scan(ctx, testIdempotencyTableName)
 	require.Len(t, scanAll, 1)
 	scanned, err := FromItem(scanAll[0])
 	require.NoError(t, err)
@@ -118,7 +122,8 @@ func TestStore_SetTaskARN(t *testing.T) {
 func TestStore_DeleteRecord(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := newDyDBStore(awsConfig, logging.Default, testIdempotencyTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
 
 	recordToDelete := Record{
 		ID:                  "1/2/",
@@ -132,13 +137,13 @@ func TestStore_DeleteRecord(t *testing.T) {
 		Status:              Completed,
 	}
 
-	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(store.table)).WithItems(test.ItemersToPutItemInputs(t, store.table, &recordToDelete, &recordToKeep)...)
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName)).WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, &recordToDelete, &recordToKeep)...)
 	defer dyDB.Teardown()
 
 	err := store.DeleteRecord(ctx, recordToDelete.ID)
 	require.NoError(t, err)
 
-	scanAll := dyDB.Scan(ctx, store.table)
+	scanAll := dyDB.Scan(ctx, testIdempotencyTableName)
 	require.Len(t, scanAll, 1)
 	scanned, err := FromItem(scanAll[0])
 	require.NoError(t, err)

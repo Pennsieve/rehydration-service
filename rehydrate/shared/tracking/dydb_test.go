@@ -2,6 +2,7 @@ package tracking_test
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -18,7 +19,8 @@ var testTableName = "test-request-tracking-table"
 func TestDyDBStore_PutEntry(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := tracking.NewStore(dyDBClient, logging.Default, testTableName)
 
 	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName))
 	defer dyDB.Teardown()
@@ -61,7 +63,8 @@ func TestDyDBStore_PutEntry(t *testing.T) {
 func TestDyDBStore_EmailSent(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := tracking.NewStore(dyDBClient, logging.Default, testTableName)
 
 	expectedID := uuid.NewString()
 	dataset := models.Dataset{
@@ -113,7 +116,8 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
-	store := tracking.NewStore(awsConfig, logging.Default, testTableName)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := tracking.NewStore(dyDBClient, logging.Default, testTableName)
 
 	dataset := models.Dataset{
 		ID:        898,

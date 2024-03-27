@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared"
+	"github.com/pennsieve/rehydration-service/shared/awsclient"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -18,14 +20,16 @@ import (
 )
 
 type Config struct {
-	AWSConfig        aws.Config
-	Env              *Env
-	Logger           *slog.Logger
-	pennsieveClient  *pennsieve.Client
-	idempotencyStore idempotency.Store
-	objectProcessor  objects.Processor
-	trackingStore    tracking.Store
-	emailer          notification.Emailer
+	AWSConfig         aws.Config
+	Env               *Env
+	Logger            *slog.Logger
+	pennsieveClient   *pennsieve.Client
+	idempotencyStore  idempotency.Store
+	objectProcessor   objects.Processor
+	trackingStore     tracking.Store
+	emailer           notification.Emailer
+	s3ClientFactory   *awsclient.Factory[s3.Client]
+	dyDBClientFactory *awsclient.Factory[dynamodb.Client]
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -33,9 +37,11 @@ func NewConfig(awsConfig aws.Config, env *Env) *Config {
 		slog.Group("dataset", slog.Int("id", env.Dataset.ID), slog.Int("versionId", env.Dataset.VersionID)),
 		slog.Group("user", slog.String("name", env.User.Name), slog.String("email", env.User.Email)))
 	return &Config{
-		AWSConfig: awsConfig,
-		Env:       env,
-		Logger:    logger,
+		AWSConfig:         awsConfig,
+		Env:               env,
+		Logger:            logger,
+		s3ClientFactory:   awsclient.NewFactory(awsclient.S3ClientBuilder),
+		dyDBClientFactory: awsclient.NewFactory(awsclient.DyDBClientBuilder),
 	}
 }
 
@@ -48,7 +54,7 @@ func (c *Config) PennsieveClient() *pennsieve.Client {
 
 func (c *Config) IdempotencyStore() idempotency.Store {
 	if c.idempotencyStore == nil {
-		store := idempotency.NewStore(c.AWSConfig, c.Logger, c.Env.IdempotencyTable)
+		store := idempotency.NewStore(c.dyDBClientFactory.Get(c.AWSConfig), c.Logger, c.Env.IdempotencyTable)
 		c.idempotencyStore = store
 	}
 	return c.idempotencyStore
@@ -61,7 +67,7 @@ func (c *Config) SetIdempotencyStore(store idempotency.Store) {
 
 func (c *Config) TrackingStore() tracking.Store {
 	if c.trackingStore == nil {
-		store := tracking.NewStore(c.AWSConfig, c.Logger, c.Env.TrackingTable)
+		store := tracking.NewStore(c.dyDBClientFactory.Get(c.AWSConfig), c.Logger, c.Env.TrackingTable)
 		c.trackingStore = store
 	}
 	return c.trackingStore
@@ -74,7 +80,8 @@ func (c *Config) SetTrackingStore(store tracking.Store) {
 
 func (c *Config) ObjectProcessor(thresholdSize int64) objects.Processor {
 	if c.objectProcessor == nil {
-		c.objectProcessor = objects.NewRehydrator(s3.NewFromConfig(c.AWSConfig), thresholdSize, c.Logger)
+		s3Client := c.s3ClientFactory.Get(c.AWSConfig)
+		c.objectProcessor = objects.NewRehydrator(s3Client, thresholdSize, c.Logger)
 	}
 	return c.objectProcessor
 }

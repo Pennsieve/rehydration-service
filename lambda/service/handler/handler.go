@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/ecs"
 	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
@@ -46,7 +47,9 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
-	trackingStore := tracking.NewStore(*awsConfig, rehydrationRequest.Logger, taskConfig.TrackingTableName)
+	dyDBClient := dynamodb.NewFromConfig(*awsConfig)
+
+	trackingStore := tracking.NewStore(dyDBClient, rehydrationRequest.Logger, taskConfig.TrackingTableName)
 
 	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
 	if err != nil {
@@ -56,7 +59,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	}
 
 	idempotencyConfig := idempotency.Config{
-		AWSConfig:        *awsConfig,
+		Client:           dyDBClient,
 		IdempotencyTable: taskConfig.IdempotencyTableName,
 	}
 

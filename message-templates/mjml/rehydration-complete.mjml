@@ -64,6 +64,7 @@
       <mj-column padding="0">
         <mj-text mj-class="kicker">
           Your requested rehydration of Dataset {{.DatasetID}} version {{.DatasetVersionID}} is complete.
+          The files and metadata have been placed in an AWS S3 Requester Pays bucket. You can learn more about <a href="https://docs.pennsieve.io/docs/downloading-a-public-dataset">downloading data from AWS</a> in the Help Center.
         </mj-text>
       </mj-column>
     </mj-section>

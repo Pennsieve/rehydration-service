@@ -71,6 +71,7 @@
     <mj-section mj-class="copy-section">
       <mj-column padding="24px 0 0">
         <mj-text mj-class="kicker">
+          Click <a href="mailto:{{.SupportEmailAddress}}?subject=Rehydration%20request%20{{.RequestID}}">here</a> to contact Pennsieve Support about this error.
           When reporting the error please include your request ID: <code>{{.RequestID}}</code>
         </mj-text>
       </mj-column>

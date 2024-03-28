@@ -13,6 +13,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
+	"net/mail"
 	"time"
 )
 
@@ -47,6 +48,9 @@ func validateRequest(request models.Request) *BadRequestError {
 	}
 	if len(request.User.Email) == 0 {
 		return &BadRequestError{`missing User "email"`}
+	}
+	if _, err := mail.ParseAddress(request.User.Email); err != nil {
+		return &BadRequestError{message: fmt.Sprintf("invalid email address: %s: %v", request.User.Email, err)}
 	}
 	return nil
 }

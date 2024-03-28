@@ -35,10 +35,13 @@ func TestRehydrationFailedEmailBody(t *testing.T) {
 	datasetID := 6803
 	datasetVersionID := 1
 	requestID := uuid.NewString()
+	supportEmail := "support@pennsieve.example.com"
 
-	body, err := RehydrationFailedEmailBody(datasetID, datasetVersionID, requestID)
+	body, err := RehydrationFailedEmailBody(datasetID, datasetVersionID, requestID, supportEmail)
 	require.NoError(t, err)
 	assert.Contains(t, body, "Rehydration Failed")
 	assert.Contains(t, body, requestID)
 	assert.Contains(t, body, fmt.Sprintf("Dataset %d version %d", datasetID, datasetVersionID))
+	assert.Contains(t, body, fmt.Sprintf("mailto:%s", supportEmail))
+	assert.Contains(t, body, fmt.Sprintf("subject=Rehydration%%20request%%20%s", requestID))
 }

@@ -29,9 +29,10 @@ type rehydrationCompleteData struct {
 }
 
 type rehydrationFailedData struct {
-	DatasetID        int
-	DatasetVersionID int
-	RequestID        string
+	DatasetID           int
+	DatasetVersionID    int
+	RequestID           string
+	SupportEmailAddress string
 }
 
 func parseTemplate(pattern string) (*template.Template, error) {
@@ -60,11 +61,12 @@ func RehydrationCompleteEmailBody(datasetID, datasetVersionID int, rehydrationLo
 	})
 }
 
-func RehydrationFailedEmailBody(datasetID, datasetVersionID int, requestID string) (string, error) {
+func RehydrationFailedEmailBody(datasetID, datasetVersionID int, requestID string, supportEmailAddress string) (string, error) {
 	return executeTemplate(rehydrationFailedTemplate, rehydrationFailedData{
-		DatasetID:        datasetID,
-		DatasetVersionID: datasetVersionID,
-		RequestID:        requestID,
+		DatasetID:           datasetID,
+		DatasetVersionID:    datasetVersionID,
+		RequestID:           requestID,
+		SupportEmailAddress: supportEmailAddress,
 	})
 }
 

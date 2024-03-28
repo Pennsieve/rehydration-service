@@ -51,7 +51,7 @@ func (e *SESEmailer) SendRehydrationComplete(ctx context.Context, dataset models
 }
 
 func (e *SESEmailer) SendRehydrationFailed(ctx context.Context, dataset models.Dataset, user models.User, requestID string) error {
-	body, err := RehydrationFailedEmailBody(dataset.ID, dataset.VersionID, requestID)
+	body, err := RehydrationFailedEmailBody(dataset.ID, dataset.VersionID, requestID, e.sender)
 	if err != nil {
 		return err
 	}

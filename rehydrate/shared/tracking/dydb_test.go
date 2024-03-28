@@ -82,7 +82,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 
 	emailSentDate := time.Now().Add(time.Hour * 7)
 	expectedStatus := tracking.Completed
-	require.NoError(t, store.EmailSent(ctx, expectedID, emailSentDate, expectedStatus))
+	require.NoError(t, store.EmailSent(ctx, expectedID, &emailSentDate, expectedStatus))
 
 	items := dyDB.Scan(ctx, testTableName)
 	require.Len(t, items, 1)
@@ -101,7 +101,7 @@ func TestDyDBStore_EmailSent(t *testing.T) {
 	AssertEqualAttributeValueString(t, origEntry.RequestDate.Format(time.RFC3339Nano), updatedItem[tracking.RequestDateAttrName])
 
 	// A second try should fail
-	err := store.EmailSent(ctx, expectedID, emailSentDate, expectedStatus)
+	err := store.EmailSent(ctx, expectedID, &emailSentDate, expectedStatus)
 	var alreadyExistsError *tracking.EntryAlreadyExistsError
 	if assert.ErrorAs(t, err, &alreadyExistsError) {
 		assert.NoError(t, alreadyExistsError.UnmarshallingError)
@@ -128,22 +128,41 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 		Email: "sur@example.com",
 	}
 	expectedFargateTaskARN := "arn::::test:test"
-	alreadyHandledRequestDate := time.Now().Add(-time.Hour * 24)
-	alreadyHandledEmailSentData := alreadyHandledRequestDate.Add(time.Hour * 12)
-	alreadyHandledEntry := &tracking.Entry{
+	// An entry from a previous, completed rehydration of the same dataset.
+	// It's already been handled, so the Query being tested should not return it.
+	oldCompletedRequestDate := time.Now().Add(-time.Hour * 24)
+	oldCompletedEmailSentData := oldCompletedRequestDate.Add(time.Hour * 12)
+	oldCompletedEntry := &tracking.Entry{
 		DatasetVersionIndex: tracking.DatasetVersionIndex{
 			ID:                uuid.NewString(),
 			DatasetVersion:    dataset.DatasetVersion(),
 			UserName:          "Hal Blaine",
 			UserEmail:         "hb@example.com",
 			RehydrationStatus: tracking.Completed,
-			EmailSentDate:     &alreadyHandledEmailSentData,
+			EmailSentDate:     &oldCompletedEmailSentData,
 		},
 		LambdaLogStream: uuid.NewString(),
 		AWSRequestID:    uuid.NewString(),
-		RequestDate:     alreadyHandledRequestDate,
+		RequestDate:     oldCompletedRequestDate,
 		FargateTaskARN:  uuid.NewString(),
 	}
+	// An entry from a previous, failed rehydration of the same dataset.
+	// It's already been handled, so the Query being tested should not return it.
+	oldFailedRequestDate := time.Now().Add(-time.Hour * 48)
+	oldFailedEntry := &tracking.Entry{
+		DatasetVersionIndex: tracking.DatasetVersionIndex{
+			ID:                uuid.NewString(),
+			DatasetVersion:    dataset.DatasetVersion(),
+			UserName:          "Harry Gorman",
+			UserEmail:         "gorman@example.com",
+			RehydrationStatus: tracking.Failed,
+		},
+		LambdaLogStream: uuid.NewString(),
+		AWSRequestID:    uuid.NewString(),
+		RequestDate:     oldFailedRequestDate,
+		FargateTaskARN:  uuid.NewString(),
+	}
+	// New, as yet, unhandled entries. These are the only entries the Query being tested should find.
 	unhandledEntries := []test.Itemer{
 		tracking.NewEntry(uuid.NewString(), dataset, user1, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
 		tracking.NewEntry(uuid.NewString(), dataset, user2, uuid.NewString(), uuid.NewString(), expectedFargateTaskARN),
@@ -154,7 +173,7 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 		asEntry := e.(*tracking.Entry)
 		unhandledEntryIndicesByID[asEntry.ID] = asEntry.DatasetVersionIndex
 	}
-	allEntries := append(unhandledEntries, alreadyHandledEntry)
+	allEntries := append(unhandledEntries, oldCompletedEntry, oldFailedEntry)
 	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, allEntries...)...)
 	defer dyDB.Teardown()
 

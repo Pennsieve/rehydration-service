@@ -1,0 +1,12 @@
+{
+  "name": "rehydration-email-templates",
+  "version": "1.0.0",
+  "description": "creates email templates from mjml source",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "mjml": "./node_modules/.bin/mjml"
+  },
+  "dependencies": {
+    "mjml": "^4.13.0"
+  }
+}

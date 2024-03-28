@@ -10,6 +10,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
+	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"time"
@@ -103,8 +104,9 @@ func (r *RehydrationRequest) WriteNewInProgressRequest(ctx context.Context, trac
 	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.InProgress)
 }
 
-func (r *RehydrationRequest) WriteNewCompletedRequest(ctx context.Context, trackingStore tracking.Store, fargateTaskARN string) {
+func (r *RehydrationRequest) WriteNewCompletedRequest(ctx context.Context, trackingStore tracking.Store, fargateTaskARN string, emailSentDate *time.Time) {
 	r.trackingEntry.FargateTaskARN = fargateTaskARN
+	r.trackingEntry.EmailSentDate = emailSentDate
 	r.writeTrackingEntryWithStatus(ctx, trackingStore, tracking.Completed)
 }
 
@@ -120,4 +122,18 @@ func (r *RehydrationRequest) writeTrackingEntryWithStatus(ctx context.Context, t
 			slog.Any("rehydrationStatus", status),
 			slog.Any("error", err))
 	}
+}
+
+func (r *RehydrationRequest) SendCompletedEmail(ctx context.Context, emailer notification.Emailer, rehydrationLocation string) *time.Time {
+	if err := emailer.SendRehydrationComplete(ctx, r.Dataset, r.User, rehydrationLocation); err != nil {
+		// don't want to fail request if we can't email user
+		r.Logger.Warn("error sending rehydration complete email",
+			slog.Any("rehydrationLocation", rehydrationLocation),
+			slog.Any("error", err))
+		return nil
+	}
+	emailSent := time.Now()
+	r.Logger.Info("sent rehydration completed email",
+		slog.Time("time", emailSent))
+	return &emailSent
 }

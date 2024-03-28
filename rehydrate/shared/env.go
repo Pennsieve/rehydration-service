@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+const AWSRegionKey = "REGION"
+
 // NonEmptyFromEnvVar looks up value of env var with the given key and returns an error if the value is not set or
 // is empty. Otherwise, returns the value.
 func NonEmptyFromEnvVar(key string) (string, error) {

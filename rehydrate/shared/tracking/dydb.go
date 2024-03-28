@@ -34,7 +34,7 @@ func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyD
 	}
 }
 
-func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time.Time, status RehydrationStatus) error {
+func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate *time.Time, status RehydrationStatus) error {
 	expressionAttrNames := map[string]string{
 		"#emailSentDate": EmailSentDateAttrName,
 		"#status":        RehydrationStatusAttrName,
@@ -42,7 +42,7 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate time
 	temp := &Entry{
 		DatasetVersionIndex: DatasetVersionIndex{
 			RehydrationStatus: status,
-			EmailSentDate:     &emailSentDate,
+			EmailSentDate:     emailSentDate,
 		},
 	}
 	expressionValues, err := temp.Item()
@@ -85,10 +85,17 @@ func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, datas
 	var indexEntries []DatasetVersionIndex
 	var errs []error
 	datasetVersionTerm := ":datasetVersion"
-	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)
-	expressionValues := map[string]types.AttributeValue{datasetVersionTerm: stringAttributeValue(dataset.DatasetVersion())}
+	rehydrationStatusTerm := ":rehydrationStatus"
+	expressionValues := map[string]types.AttributeValue{
+		datasetVersionTerm:    stringAttributeValue(dataset.DatasetVersion()),
+		rehydrationStatusTerm: stringAttributeValue(string(InProgress)),
+	}
 
-	filterExpression := fmt.Sprintf("attribute_not_exists(%s)", EmailSentDateAttrName)
+	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)
+	filterExpression := fmt.Sprintf("attribute_not_exists(%s) AND %s = %s",
+		EmailSentDateAttrName,
+		RehydrationStatusAttrName,
+		rehydrationStatusTerm)
 
 	queryIn := &dynamodb.QueryInput{
 		TableName:                 aws.String(s.table),

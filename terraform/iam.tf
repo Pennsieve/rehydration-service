@@ -93,6 +93,16 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
   }
 
   statement {
+    sid     = "RehydrationFargateSESPermissions"
+    effect  = "Allow"
+    actions = [
+      "ses:SendEmail",
+      "ses:SendRawEmail",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
     sid     = "TaskLogPermissions"
     effect  = "Allow"
     actions = [
@@ -230,6 +240,16 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
       "${aws_dynamodb_table.tracking_table.arn}/*",
     ]
 
+  }
+
+  statement {
+    sid     = "RehydrationLambdaSESPermissions"
+    effect  = "Allow"
+    actions = [
+      "ses:SendEmail",
+      "ses:SendRawEmail",
+    ]
+    resources = ["*"]
   }
 }
 

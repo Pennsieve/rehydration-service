@@ -1,10 +1,13 @@
-.PHONY: help go-get local-services test test-ci clean docker-clean package publish
+.PHONY: help go-get npm-install html-clean local-services test test-ci clean docker-clean package publish
 
 LAMBDA_BUCKET ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR   ?= "$(shell pwd)"
 SERVICE_NAME  ?= "rehydration-service"
 LAMBDA_BIN ?= $(WORKING_DIR)/lambda/bin
 SERVICE_PACKAGE_NAME ?= "rehydration-service-${IMAGE_TAG}.zip"
+MJML_DIR = message-templates/mjml
+MJML_SRCS = $(wildcard $(MJML_DIR)/*.mjml)
+HTML_DIR = rehydrate/shared/notification/html
 
 .DEFAULT: help
 
@@ -26,13 +29,24 @@ tidy:
 	cd ${WORKING_DIR}/rehydrate/fargate; go mod tidy
 	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
 
+npm-install:
+	npm install
+
+$(HTML_DIR)/%.html: $(MJML_DIR)/%.mjml
+	./node_modules/mjml/bin/mjml $< -o $@
+
+email-templates: npm-install html-clean $(patsubst $(MJML_DIR)/%.mjml, $(HTML_DIR)/%.html, $(MJML_SRCS))
+
+html-clean:
+	rm -f $(HTML_DIR)/*
+
 # Start the local versions of docker services
 local-services: docker-clean
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 	docker-compose -f docker-compose.test-local.yaml up -d dynamodb-local minio-local
 
 # Run tests locally
-test: local-services
+test: local-services email-templates
 	./run-tests.sh test-common.env test-local.env
 	docker-compose -f docker-compose.test-local.yaml down --remove-orphans
 
@@ -41,7 +55,7 @@ test-ci: docker-clean
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
-clean: docker-clean
+clean: docker-clean html-clean
 	rm -fr $(LAMBDA_BIN)
 
 # Spin down active docker containers.
@@ -68,8 +82,7 @@ package:
 	cd $(WORKING_DIR)/rehydrate; \
 		docker build -t pennsieve/rehydrate:${IMAGE_TAG} . ;\
 
-publish:
-	@make package
+publish: package
 	@echo ""
 	@echo "*************************"
 	@echo "*   Publishing Trigger lambda   *"

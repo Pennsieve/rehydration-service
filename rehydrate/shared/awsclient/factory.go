@@ -13,8 +13,8 @@ type ClientBuilder[T any] func(config aws.Config) *T
 // then return that instance on any subsequent calls to Factory.Get. In order to share AWS service
 // clients as much as possible.
 //
-// This Factory is not goroutine safe, but the returned AWS clients are (per AWS documentation), so
-// Factory.Get should not be called from multiple goroutines, but the returned client can be shared among routines.
+// This Factory is NOT goroutine safe, but the returned AWS clients are (per AWS documentation), so
+// Factory.Get should only be called in tha "main" goroutine, but the returned client can be shared among goroutines.
 type Factory[T any] struct {
 	builder  ClientBuilder[T]
 	instance *T

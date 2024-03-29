@@ -40,7 +40,7 @@ func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) err
 		}
 	} else {
 		copyLogger.Info("multipart copy")
-		err := utils.MultiPartCopy(r.S3, src.GetSize(), src.GetVersionedUri(), dest.GetBucket(), dest.GetKey(), copyLogger)
+		err := utils.MultiPartCopy(ctx, r.S3, src.GetSize(), src.GetVersionedUri(), dest.GetBucket(), dest.GetKey(), copyLogger)
 		if err != nil {
 			return fmt.Errorf("error processing multipart copy for %s: %w", src.GetName(), err)
 		}

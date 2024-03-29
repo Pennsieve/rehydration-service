@@ -24,14 +24,14 @@ const maxPartSize = 50 * 1024 * 1024
 const nrCopyWorkers = 10
 
 // MultiPartCopy function that starts, perform each part upload, and completes the copy
-func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string, logger *slog.Logger) error {
+func MultiPartCopy(ctx context.Context, svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string, logger *slog.Logger) error {
 
 	partWalker := make(chan s3.UploadPartCopyInput, nrCopyWorkers)
 	results := make(chan s3types.CompletedPart, nrCopyWorkers)
 
 	parts := make([]s3types.CompletedPart, 0)
 
-	ctx, cancelFn := context.WithTimeout(context.TODO(), 30*time.Minute)
+	childCtx, cancelFn := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancelFn()
 
 	//struct for starting a multipart upload
@@ -43,7 +43,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 	//send command to start copy and get the upload id as it is needed later
 	var uploadId string
-	createOutput, err := svc.CreateMultipartUpload(ctx, &startInput)
+	createOutput, err := svc.CreateMultipartUpload(childCtx, &startInput)
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 	go aggregateResult(done, &parts, results)
 
 	// Wait until all processors are completed.
-	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results, logger)
+	createWorkerPool(childCtx, svc, nrCopyWorkers, uploadId, partWalker, results, logger)
 
 	// Wait until done channel has a value
 	<-done
@@ -90,7 +90,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 		MultipartUpload: &mpu,
 		RequestPayer:    s3types.RequestPayerRequester,
 	}
-	compOutput, err := svc.CompleteMultipartUpload(context.TODO(), &complete)
+	compOutput, err := svc.CompleteMultipartUpload(childCtx, &complete)
 	if err != nil {
 		return fmt.Errorf("error completing upload: %w", err)
 	}
@@ -169,7 +169,7 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 			RequestPayer: s3types.RequestPayerRequester,
 		}
 		//ignoring any errors with aborting the copy
-		_, err := svc.AbortMultipartUpload(context.TODO(), &abortIn)
+		_, err := svc.AbortMultipartUpload(ctx, &abortIn)
 		if err != nil {
 			logger.Error("error aborting failed upload session", "error", err)
 		}

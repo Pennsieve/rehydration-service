@@ -20,18 +20,19 @@ import (
 	"strconv"
 )
 
+var s3ClientSupplier = awsclient.NewSupplier(s3.NewFromConfig)
+var dyDBClientSupplier = awsclient.NewSupplier(dynamodb.NewFromConfig)
+var sesClientSupplier = awsclient.NewSupplier(ses.NewFromConfig)
+
 type Config struct {
-	AWSConfig         aws.Config
-	Env               *Env
-	Logger            *slog.Logger
-	pennsieveClient   *pennsieve.Client
-	idempotencyStore  idempotency.Store
-	objectProcessor   objects.Processor
-	trackingStore     tracking.Store
-	emailer           notification.Emailer
-	s3ClientFactory   *awsclient.Factory[s3.Client]
-	dyDBClientFactory *awsclient.Factory[dynamodb.Client]
-	sesClientFactory  *awsclient.Factory[ses.Client]
+	AWSConfig        aws.Config
+	Env              *Env
+	Logger           *slog.Logger
+	pennsieveClient  *pennsieve.Client
+	idempotencyStore idempotency.Store
+	objectProcessor  objects.Processor
+	trackingStore    tracking.Store
+	emailer          notification.Emailer
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -39,12 +40,9 @@ func NewConfig(awsConfig aws.Config, env *Env) *Config {
 		slog.Group("dataset", slog.Int("id", env.Dataset.ID), slog.Int("versionId", env.Dataset.VersionID)),
 		slog.Group("user", slog.String("name", env.User.Name), slog.String("email", env.User.Email)))
 	return &Config{
-		AWSConfig:         awsConfig,
-		Env:               env,
-		Logger:            logger,
-		s3ClientFactory:   awsclient.NewFactory(awsclient.S3ClientBuilder),
-		dyDBClientFactory: awsclient.NewFactory(awsclient.DyDBClientBuilder),
-		sesClientFactory:  awsclient.NewFactory(awsclient.SESClientBuilder),
+		AWSConfig: awsConfig,
+		Env:       env,
+		Logger:    logger,
 	}
 }
 
@@ -57,7 +55,7 @@ func (c *Config) PennsieveClient() *pennsieve.Client {
 
 func (c *Config) IdempotencyStore() idempotency.Store {
 	if c.idempotencyStore == nil {
-		store := idempotency.NewStore(c.dyDBClientFactory.Get(c.AWSConfig), c.Logger, c.Env.IdempotencyTable)
+		store := idempotency.NewStore(dyDBClientSupplier.Get(c.AWSConfig), c.Logger, c.Env.IdempotencyTable)
 		c.idempotencyStore = store
 	}
 	return c.idempotencyStore
@@ -70,7 +68,7 @@ func (c *Config) SetIdempotencyStore(store idempotency.Store) {
 
 func (c *Config) TrackingStore() tracking.Store {
 	if c.trackingStore == nil {
-		store := tracking.NewStore(c.dyDBClientFactory.Get(c.AWSConfig), c.Logger, c.Env.TrackingTable)
+		store := tracking.NewStore(dyDBClientSupplier.Get(c.AWSConfig), c.Logger, c.Env.TrackingTable)
 		c.trackingStore = store
 	}
 	return c.trackingStore
@@ -83,7 +81,7 @@ func (c *Config) SetTrackingStore(store tracking.Store) {
 
 func (c *Config) ObjectProcessor(thresholdSize int64) objects.Processor {
 	if c.objectProcessor == nil {
-		s3Client := c.s3ClientFactory.Get(c.AWSConfig)
+		s3Client := s3ClientSupplier.Get(c.AWSConfig)
 		c.objectProcessor = objects.NewRehydrator(s3Client, thresholdSize, c.Logger)
 	}
 	return c.objectProcessor
@@ -96,7 +94,7 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 
 func (c *Config) Emailer() (notification.Emailer, error) {
 	if c.emailer == nil {
-		emailer, err := notification.NewEmailer(c.sesClientFactory.Get(c.AWSConfig), c.Env.PennsieveDomain, c.Env.AWSRegion)
+		emailer, err := notification.NewEmailer(sesClientSupplier.Get(c.AWSConfig), c.Env.PennsieveDomain, c.Env.AWSRegion)
 		if err != nil {
 			return nil, err
 		}

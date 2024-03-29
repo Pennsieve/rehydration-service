@@ -243,3 +243,32 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 }
 
+# Create Rehydration S3 Bucket Policy
+data "aws_iam_policy_document" "rehydration_bucket_iam_policy_document" {
+
+  statement {
+    sid       = "AllowPublicObjectAccessToNonRoot"
+    effect    = "Allow"
+    actions   = ["s3:GetObject*"]
+    resources = ["${aws_s3_bucket.rehydration_s3_bucket.arn}/*/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "AllowList"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.rehydration_s3_bucket.arn]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+}
+

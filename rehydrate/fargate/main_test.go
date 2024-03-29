@@ -406,6 +406,8 @@ func newTestConfigEnv() *config.Env {
 		TaskEnv:           "TEST",
 		IdempotencyTable:  "test-idempotency-table",
 		TrackingTable:     "test-tracking-table",
+		PennsieveDomain:   "pennsieve.example.com",
+		AWSRegion:         "us-test-1",
 		RehydrationBucket: "test-rehydration-bucket",
 	}
 }

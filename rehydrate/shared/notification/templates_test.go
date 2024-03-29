@@ -18,7 +18,7 @@ func TestRehydrationCompleteEmailBody(t *testing.T) {
 	require.NoError(t, LoadTemplates())
 	datasetID := 1234
 	datasetVersionID := 2
-	rehydrationLocation := fmt.Sprintf("s3://bucket/rehydrated/%d/%d", datasetID, datasetVersionID)
+	rehydrationLocation := fmt.Sprintf("s3://bucket/%d/%d", datasetID, datasetVersionID)
 	awsRegion := "us-east-1"
 
 	body, err := RehydrationCompleteEmailBody(datasetID, datasetVersionID, rehydrationLocation, awsRegion)

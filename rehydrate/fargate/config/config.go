@@ -111,14 +111,15 @@ func (c *Config) SetEmailer(emailer notification.Emailer) {
 }
 
 type Env struct {
-	Dataset          *models.Dataset
-	User             *models.User
-	TaskEnv          string
-	PennsieveHost    string
-	IdempotencyTable string
-	TrackingTable    string
-	PennsieveDomain  string
-	AWSRegion        string
+	Dataset           *models.Dataset
+	User              *models.User
+	TaskEnv           string
+	PennsieveHost     string
+	IdempotencyTable  string
+	TrackingTable     string
+	PennsieveDomain   string
+	AWSRegion         string
+	RehydrationBucket string
 }
 
 func LookupEnv() (*Env, error) {
@@ -143,6 +144,10 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	rehydrationBucket, err := shared.NonEmptyFromEnvVar(shared.RehydrationBucketKey)
+	if err != nil {
+		return nil, err
+	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
 		return nil, err
@@ -152,14 +157,15 @@ func LookupEnv() (*Env, error) {
 		return nil, err
 	}
 	return &Env{
-		Dataset:          dataset,
-		User:             user,
-		TaskEnv:          env,
-		PennsieveHost:    pennsieveHost,
-		IdempotencyTable: idempotencyTable,
-		TrackingTable:    trackingTable,
-		PennsieveDomain:  pennsieveDomain,
-		AWSRegion:        awsRegion,
+		Dataset:           dataset,
+		User:              user,
+		TaskEnv:           env,
+		PennsieveHost:     pennsieveHost,
+		IdempotencyTable:  idempotencyTable,
+		TrackingTable:     trackingTable,
+		PennsieveDomain:   pennsieveDomain,
+		AWSRegion:         awsRegion,
+		RehydrationBucket: rehydrationBucket,
 	}, nil
 }
 

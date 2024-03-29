@@ -13,21 +13,9 @@ func TestCreateDestinationKey(t *testing.T) {
 	versionId := 2
 	path := "files/testfile.txt"
 	destinationKey := utils.CreateDestinationKey(datasetId, versionId, path)
-	expectedDestinationKey := "rehydrated/5070/2/files/testfile.txt"
+	expectedDestinationKey := "5070/2/files/testfile.txt"
 	if destinationKey != expectedDestinationKey {
 		t.Errorf("expected %s, got %s", expectedDestinationKey, destinationKey)
-	}
-}
-
-func TestCreateDestinationBucket(t *testing.T) {
-	datasetUri := "s3://pennsieve-dev-discover-publish50-use1/5069/"
-	result, err := utils.CreateDestinationBucket(datasetUri)
-	expectedResult := "pennsieve-dev-discover-publish50-use1"
-	if err != nil {
-		t.Errorf("expected a nil error got %s", err.Error())
-	}
-	if result != expectedResult {
-		t.Errorf("got %s, expected %s", result, expectedResult)
 	}
 }
 
@@ -45,7 +33,7 @@ func TestRehydrationLocation(t *testing.T) {
 	destinationBucket := "destination-bucket"
 	datasetId := 5070
 	versionId := 2
-	expectedLocation := fmt.Sprintf("s3://%s/rehydrated/%d/%d", destinationBucket, datasetId, versionId)
+	expectedLocation := fmt.Sprintf("s3://%s/%d/%d", destinationBucket, datasetId, versionId)
 	location := utils.RehydrationLocation(destinationBucket, datasetId, versionId)
 	require.Equal(t, expectedLocation, location)
 }

@@ -30,7 +30,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	publishBucket := "discover-bucket"
 	taskEnv := newTestConfigEnv()
 	dataset := taskEnv.Dataset
-	expectedRehydrationLocation := utils.RehydrationLocation(publishBucket, dataset.ID, dataset.VersionID)
+	expectedRehydrationLocation := utils.RehydrationLocation(taskEnv.RehydrationBucket, dataset.ID, dataset.VersionID)
 
 	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50)
 
@@ -42,9 +42,10 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	} {
 		t.Run(testName, func(t *testing.T) {
 			// Set up S3 for the tests
-			s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig), &s3.CreateBucketInput{
-				Bucket: aws.String(publishBucket),
-			}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
+			s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig),
+				&s3.CreateBucketInput{Bucket: aws.String(publishBucket)},
+				&s3.CreateBucketInput{Bucket: aws.String(taskEnv.RehydrationBucket)},
+			).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
 			defer s3Fixture.Teardown()
 
 			// Set S3 versionIds
@@ -132,7 +133,6 @@ func TestRehydrationTaskHandler(t *testing.T) {
 
 			// Create a mock Discover API server
 			mockDiscover := discovertest.NewServerFixture(t, nil,
-				discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 				discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 				discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 			)
@@ -149,7 +149,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			afterTask := time.Now()
 			for _, datasetFile := range testDatasetFiles.Files {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
-				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
+				s3Fixture.AssertObjectExists(taskEnv.RehydrationBucket, expectedRehydratedKey, datasetFile.Size)
 			}
 			idempotencyItems := dyDB.Scan(ctx, taskEnv.IdempotencyTable)
 			require.Len(t, idempotencyItems, 1)
@@ -254,7 +254,6 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 
 	// Create a mock Discover API server
 	mockDiscover := discovertest.NewServerFixture(t, nil,
-		discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 		discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 	)
@@ -318,15 +317,10 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	for testName, testParams := range map[string]struct {
 		discoverBuilders []*test.HandlerFuncBuilder
 	}{
-		"get dataset error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.ErrorGetDatasetByVersionHandlerBuilder(*dataset, "dataset not found", http.StatusNotFound)},
-		},
 		"get dataset metadata error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.ErrorGetDatasetMetadataByVersionHandlerBuilder(*dataset, "internal service error", http.StatusInternalServerError)},
 		},
 		"get dataset file error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 			discovertest.ErrorGetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath(), pathsToFail),
 		}},
@@ -407,11 +401,12 @@ func newTestConfigEnv() *config.Env {
 	}
 
 	return &config.Env{
-		Dataset:          dataset,
-		User:             user,
-		TaskEnv:          "TEST",
-		IdempotencyTable: "test-idempotency-table",
-		TrackingTable:    "test-tracking-table",
+		Dataset:           dataset,
+		User:              user,
+		TaskEnv:           "TEST",
+		IdempotencyTable:  "test-idempotency-table",
+		TrackingTable:     "test-tracking-table",
+		RehydrationBucket: "test-rehydration-bucket",
 	}
 }
 

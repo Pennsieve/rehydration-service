@@ -14,18 +14,22 @@ type ClientBuilder[T, O any] func(config aws.Config, optFns ...func(*O)) *T
 // Supplier.Get should only be called in tha "main" goroutine, but the returned client can be shared among goroutines.
 type Supplier[T, O any] struct {
 	builder  ClientBuilder[T, O]
+	config   aws.Config
+	optFns   []func(*O)
 	instance *T
 }
 
-func NewSupplier[T, O any](builder ClientBuilder[T, O]) *Supplier[T, O] {
+func NewSupplier[T, O any](builder ClientBuilder[T, O], config aws.Config, optFns ...func(*O)) *Supplier[T, O] {
 	return &Supplier[T, O]{
 		builder: builder,
+		config:  config,
+		optFns:  optFns,
 	}
 }
 
-func (f *Supplier[T, O]) Get(awsConfig aws.Config, optFns ...func(*O)) *T {
+func (f *Supplier[T, O]) Get() *T {
 	if f.instance == nil {
-		f.instance = f.builder(awsConfig, optFns...)
+		f.instance = f.builder(f.config, f.optFns...)
 	}
 	return f.instance
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
@@ -17,7 +16,6 @@ type DatasetRehydrator struct {
 	user              *models.User
 	pennsieveClient   *pennsieve.Client
 	processor         objects.Processor
-	awsConfig         aws.Config
 	logger            *slog.Logger
 	rehydrationBucket string
 }
@@ -28,7 +26,6 @@ func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRe
 		user:              config.Env.User,
 		pennsieveClient:   config.PennsieveClient(),
 		processor:         config.ObjectProcessor(thresholdSize),
-		awsConfig:         config.AWSConfig,
 		logger:            config.Logger,
 		rehydrationBucket: config.Env.RehydrationBucket,
 	}

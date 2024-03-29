@@ -24,6 +24,11 @@ var logger = logging.Default
 var AWSConfigFactory = awsconfig.NewFactory()
 
 func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	handlerConfig, err := RehydrationServiceHandlerConfigFromEnvironment()
+	if err != nil {
+		logger.Error("error getting Rehydration service configuration from environment variables", "error", err)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+	}
 	taskConfig, err := models.TaskConfigFromEnvironment()
 	if err != nil {
 		logger.Error("error getting ECS task configuration from environment variables", "error", err)
@@ -53,7 +58,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 
 	trackingStore := tracking.NewStore(dyDBClient, rehydrationRequest.Logger, taskConfig.TrackingTableName)
 
-	emailer, err := notification.NewEmailer(sesClient, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
+	emailer, err := notification.NewEmailer(sesClient, taskConfig.PennsieveDomain, handlerConfig.AWSRegion)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
 		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)

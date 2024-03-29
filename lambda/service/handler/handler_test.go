@@ -31,7 +31,6 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 	With("CLUSTER_ARN", "test-cluster-arn").
 	With("SECURITY_GROUP", "test-sg").
 	With("TASK_DEF_CONTAINER_NAME", "test-rehydrate-fargate-container").
-	With(sharedmodels.ECSTaskEnvKey, "test").
 	With(notification.PennsieveDomainKey, "pennsieve.example.com").
 	With(shared.AWSRegionKey, "test-1")
 
@@ -466,21 +465,16 @@ func (b *FixtureBuilder) withECSRequestAssertionFunc(rehydrationReq models.Reque
 }
 
 func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Request) map[string]any {
-	envValue, ok := os.LookupEnv(sharedmodels.ECSTaskEnvKey)
-	require.Truef(t, ok, "env variable %s is not set", sharedmodels.ECSTaskEnvKey)
 	idempotencyTableValue, ok := os.LookupEnv(sharedidempotency.TableNameKey)
 	require.True(t, ok, "env variable %s is not set", sharedidempotency.TableNameKey)
 	trackingTableValue, ok := os.LookupEnv(tracking.TableNameKey)
 	require.True(t, ok, "env variable %s is not set", tracking.TableNameKey)
 	pennsieveDomainValue, ok := os.LookupEnv(notification.PennsieveDomainKey)
 	require.True(t, ok, "env variable %s is not set", notification.PennsieveDomainKey)
-	awsRegionValue, ok := os.LookupEnv(shared.AWSRegionKey)
-	require.True(t, ok, "env variable %s is not set", shared.AWSRegionKey)
 	containerNameValue, ok := os.LookupEnv("TASK_DEF_CONTAINER_NAME")
 	require.True(t, ok, "env variable TASK_DEF_CONTAINER_NAME is not set")
 	return map[string]any{
 		"environment": []any{
-			map[string]any{"name": sharedmodels.ECSTaskEnvKey, "value": envValue},
 			map[string]any{"name": sharedmodels.ECSTaskDatasetIDKey, "value": strconv.Itoa(rehydrationReq.Dataset.ID)},
 			map[string]any{"name": sharedmodels.ECSTaskDatasetVersionIDKey, "value": strconv.Itoa(rehydrationReq.Dataset.VersionID)},
 			map[string]any{"name": sharedmodels.ECSTaskUserNameKey, "value": rehydrationReq.User.Name},
@@ -488,7 +482,6 @@ func expectedECSContainerOverrides(t require.TestingT, rehydrationReq models.Req
 			map[string]any{"name": sharedidempotency.TableNameKey, "value": idempotencyTableValue},
 			map[string]any{"name": tracking.TableNameKey, "value": trackingTableValue},
 			map[string]any{"name": notification.PennsieveDomainKey, "value": pennsieveDomainValue},
-			map[string]any{"name": shared.AWSRegionKey, "value": awsRegionValue},
 		},
 		"name": containerNameValue}
 }

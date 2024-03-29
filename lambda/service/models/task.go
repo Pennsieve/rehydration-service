@@ -19,11 +19,9 @@ type ECSTaskConfig struct {
 	Cluster              string
 	SecurityGroup        string
 	TaskDefContainerName string
-	Environment          string
 	IdempotencyTableName string
 	TrackingTableName    string
 	PennsieveDomain      string
-	AWSRegion            string
 }
 
 func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
@@ -48,10 +46,6 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	envValue, err := shared.NonEmptyFromEnvVar(sharedmodels.ECSTaskEnvKey)
-	if err != nil {
-		return nil, err
-	}
 	idempotencyTable, err := shared.NonEmptyFromEnvVar(idempotency.TableNameKey)
 	if err != nil {
 		return nil, err
@@ -64,10 +58,6 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	awsRegion, err := shared.NonEmptyFromEnvVar(shared.AWSRegionKey)
-	if err != nil {
-		return nil, err
-	}
 
 	return &ECSTaskConfig{
 		TaskDefinitionARN:    taskDefinitionArn,
@@ -75,11 +65,9 @@ func TaskConfigFromEnvironment() (*ECSTaskConfig, error) {
 		Cluster:              cluster,
 		SecurityGroup:        securityGroup,
 		TaskDefContainerName: taskDefContainerName,
-		Environment:          envValue,
 		IdempotencyTableName: idempotencyTable,
 		TrackingTableName:    trackingTable,
 		PennsieveDomain:      pennsieveDomain,
-		AWSRegion:            awsRegion,
 	}, nil
 }
 
@@ -118,10 +106,6 @@ func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmo
 							Value: aws.String(user.Email),
 						},
 						{
-							Name:  aws.String(sharedmodels.ECSTaskEnvKey),
-							Value: aws.String(t.Environment),
-						},
-						{
 							Name:  aws.String(idempotency.TableNameKey),
 							Value: aws.String(t.IdempotencyTableName),
 						},
@@ -132,10 +116,6 @@ func (t *ECSTaskConfig) RunTaskInput(dataset sharedmodels.Dataset, user sharedmo
 						{
 							Name:  aws.String(notification.PennsieveDomainKey),
 							Value: aws.String(t.PennsieveDomain),
-						},
-						{
-							Name:  aws.String(shared.AWSRegionKey),
-							Value: aws.String(t.AWSRegion),
 						},
 					},
 				},

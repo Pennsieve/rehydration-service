@@ -7,8 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// MaxDeleteBatch is the maximum number of keys that can be sent to DeleteObjects in one call.
-const MaxDeleteBatch = int32(1000)
+// MaxCleanBatch is the maximum number of keys that can be sent to DeleteObjects in one call.
+const MaxCleanBatch = int32(1000)
 
 type Cleaner interface {
 	// Clean deletes all objects in this Cleaner's bucket under the given keyPrefix.
@@ -18,7 +18,7 @@ type Cleaner interface {
 	//
 	// It is an error if the keyPrefix does not end in '/'
 	//
-	// Deletes are done in batches of the given batchSize. It is an error if batchSize <= 0 or > MaxDeleteBatch
+	// Deletes are done in batches of the given batchSize. It is an error if batchSize <= 0 or > MaxCleanBatch
 	//
 	// Callers should check CleanResponse for DeleteObjectErrors which correspond to the non-error errors
 	// DeleteObject returns.

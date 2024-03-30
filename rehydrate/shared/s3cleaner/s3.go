@@ -22,8 +22,8 @@ func NewCleaner(client *s3.Client, bucket string) Cleaner {
 }
 
 func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32) (*CleanResponse, error) {
-	if batchSize <= 0 || batchSize > MaxDeleteBatch {
-		return nil, fmt.Errorf("illegal argument: batchSize %d is out of range (0, %d]", batchSize, MaxDeleteBatch)
+	if batchSize <= 0 || batchSize > MaxCleanBatch {
+		return nil, fmt.Errorf("illegal argument: batchSize %d is out of range (0, %d]", batchSize, MaxCleanBatch)
 	}
 	if len(keyPrefix) == 0 {
 		return nil, fmt.Errorf("illegal argument: keyPrefix cannot be empty")

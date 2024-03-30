@@ -56,10 +56,11 @@ func TestS3Cleaner_Clean_IllegalArgs(t *testing.T) {
 		batchSize     int32
 		expectedInErr string
 	}{
+		{"zero batch", "12/23/", 0, "out of range"},
 		{"negative batch", "12/23/", -1, "out of range"},
-		{"batch too large", "12/23/", MaxDeleteBatch * 2, "out of range"},
-		{"empty prefix", "", MaxDeleteBatch, "empty"},
-		{"prefix does not end in slash", "12/23", MaxDeleteBatch, "'/'"},
+		{"batch too large", "12/23/", MaxCleanBatch * 2, "out of range"},
+		{"empty prefix", "", MaxCleanBatch, "empty"},
+		{"prefix does not end in slash", "12/23", MaxCleanBatch, "'/'"},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			_, err := cleaner.Clean(ctx, tst.keyPrefix, tst.batchSize)

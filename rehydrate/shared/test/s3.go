@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -100,6 +101,22 @@ func (f *S3Fixture) AssertObjectExists(bucket, key string, expectedSize int64) b
 	headOut, err := f.Client.HeadObject(f.context, headIn)
 	return assert.NoError(f.T, err, "HEAD object returned an error for expected bucket: %s, key: %s, size: %d", bucket, key, expectedSize) &&
 		assert.Equal(f.T, expectedSize, aws.ToInt64(headOut.ContentLength))
+}
+
+func (f *S3Fixture) ObjectExists(bucket, key string) bool {
+	headIn := &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+	_, err := f.Client.HeadObject(f.context, headIn)
+	if err == nil {
+		return true
+	}
+	var notFound *types.NotFound
+	if errors.As(err, &notFound) {
+		return false
+	}
+	return assert.NoError(f.T, err, "unexpected error when checking if object exists")
 }
 
 func (f *S3Fixture) Teardown() {

@@ -26,8 +26,9 @@ type Cleaner interface {
 }
 
 type CleanResponse struct {
-	Bucket string
-	Errors []DeleteObjectError
+	Bucket  string
+	Deleted int
+	Errors  []DeleteObjectError
 }
 
 // DeleteObjectError corresponds to the AWS types.Error type returned by DeleteObject. These are not actually Go errors and are

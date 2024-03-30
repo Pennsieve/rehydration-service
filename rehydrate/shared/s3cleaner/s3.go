@@ -65,7 +65,6 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 	}
 	deleteIn := &s3.DeleteObjectsInput{
 		Bucket:       bucketParam,
-		Delete:       nil,
 		RequestPayer: types.RequestPayerRequester,
 	}
 	deleted := 0
@@ -86,6 +85,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 		deleted += len(batch) - len(batchErrors)
 		response.Errors = append(response.Errors, fromAWSErrors(batchErrors)...)
 	}
+	response.Deleted = deleted
 
 	return response, nil
 }

@@ -34,6 +34,7 @@ func TestS3Cleaner_Clean(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, resp.Errors)
 	assert.Equal(t, bucket, resp.Bucket)
+	assert.Equal(t, len(objectsToClean), resp.Deleted)
 
 	for _, expectedDeleted := range objectsToClean {
 		key := aws.ToString(expectedDeleted.Key)

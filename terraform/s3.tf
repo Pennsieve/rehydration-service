@@ -28,20 +28,6 @@ resource "aws_s3_bucket_cors_configuration" "rehydration_s3_bucket_cors" {
   }
 }
 
-resource "aws_s3_bucket_acl" "rehydration_s3_acl" {
-  bucket     = aws_s3_bucket.rehydration_s3_bucket.id
-  acl        = "public-read"
-  depends_on = [aws_s3_bucket_ownership_controls.rehydration_s3_bucket_ownership_controls]
-}
-
-resource "aws_s3_bucket_ownership_controls" "rehydration_s3_bucket_ownership_controls" {
-  bucket = aws_s3_bucket.rehydration_s3_bucket.id
-  rule {
-    object_ownership = "ObjectWriter"
-  }
-  depends_on = [aws_s3_bucket_public_access_block.rehydration_s3_bucket_public_access_block]
-}
-
 resource "aws_s3_bucket_public_access_block" "rehydration_s3_bucket_public_access_block" {
   bucket = aws_s3_bucket.rehydration_s3_bucket.id
 

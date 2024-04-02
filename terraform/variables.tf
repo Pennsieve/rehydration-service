@@ -45,6 +45,9 @@ locals {
   domain_name = data.terraform_remote_state.account.outputs.domain_name
   hosted_zone = data.terraform_remote_state.account.outputs.public_hosted_zone_id
 
+  rehydration_bucket_name             = "pennsieve-${var.environment_name}-rehydration-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  discover_publish_logs_target_prefix = "${var.environment_name}/discover-publish/s3/"
+
   common_tags = {
     aws_account      = var.aws_account
     aws_region       = data.aws_region.current_region.name

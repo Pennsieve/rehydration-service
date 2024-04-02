@@ -6,6 +6,7 @@ import (
 )
 
 const AWSRegionKey = "REGION"
+const RehydrationBucketKey = "REHYDRATION_BUCKET"
 
 // NonEmptyFromEnvVar looks up value of env var with the given key and returns an error if the value is not set or
 // is empty. Otherwise, returns the value.

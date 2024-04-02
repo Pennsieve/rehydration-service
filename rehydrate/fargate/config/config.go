@@ -3,11 +3,14 @@ package config
 import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared"
+	"github.com/pennsieve/rehydration-service/shared/awsclient"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -18,14 +21,16 @@ import (
 )
 
 type Config struct {
-	AWSConfig        aws.Config
-	Env              *Env
-	Logger           *slog.Logger
-	pennsieveClient  *pennsieve.Client
-	idempotencyStore idempotency.Store
-	objectProcessor  objects.Processor
-	trackingStore    tracking.Store
-	emailer          notification.Emailer
+	Env                *Env
+	Logger             *slog.Logger
+	pennsieveClient    *pennsieve.Client
+	idempotencyStore   idempotency.Store
+	objectProcessor    objects.Processor
+	trackingStore      tracking.Store
+	emailer            notification.Emailer
+	s3ClientSupplier   *awsclient.Supplier[s3.Client, s3.Options]
+	dyDBClientSupplier *awsclient.Supplier[dynamodb.Client, dynamodb.Options]
+	sesClientSupplier  *awsclient.Supplier[ses.Client, ses.Options]
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -33,9 +38,11 @@ func NewConfig(awsConfig aws.Config, env *Env) *Config {
 		slog.Group("dataset", slog.Int("id", env.Dataset.ID), slog.Int("versionId", env.Dataset.VersionID)),
 		slog.Group("user", slog.String("name", env.User.Name), slog.String("email", env.User.Email)))
 	return &Config{
-		AWSConfig: awsConfig,
-		Env:       env,
-		Logger:    logger,
+		Env:                env,
+		Logger:             logger,
+		s3ClientSupplier:   awsclient.NewSupplier(s3.NewFromConfig, awsConfig),
+		dyDBClientSupplier: awsclient.NewSupplier(dynamodb.NewFromConfig, awsConfig),
+		sesClientSupplier:  awsclient.NewSupplier(ses.NewFromConfig, awsConfig),
 	}
 }
 
@@ -48,7 +55,7 @@ func (c *Config) PennsieveClient() *pennsieve.Client {
 
 func (c *Config) IdempotencyStore() idempotency.Store {
 	if c.idempotencyStore == nil {
-		store := idempotency.NewStore(c.AWSConfig, c.Logger, c.Env.IdempotencyTable)
+		store := idempotency.NewStore(c.dyDBClientSupplier.Get(), c.Logger, c.Env.IdempotencyTable)
 		c.idempotencyStore = store
 	}
 	return c.idempotencyStore
@@ -61,7 +68,7 @@ func (c *Config) SetIdempotencyStore(store idempotency.Store) {
 
 func (c *Config) TrackingStore() tracking.Store {
 	if c.trackingStore == nil {
-		store := tracking.NewStore(c.AWSConfig, c.Logger, c.Env.TrackingTable)
+		store := tracking.NewStore(c.dyDBClientSupplier.Get(), c.Logger, c.Env.TrackingTable)
 		c.trackingStore = store
 	}
 	return c.trackingStore
@@ -74,7 +81,8 @@ func (c *Config) SetTrackingStore(store tracking.Store) {
 
 func (c *Config) ObjectProcessor(thresholdSize int64) objects.Processor {
 	if c.objectProcessor == nil {
-		c.objectProcessor = objects.NewRehydrator(s3.NewFromConfig(c.AWSConfig), thresholdSize, c.Logger)
+		s3Client := c.s3ClientSupplier.Get()
+		c.objectProcessor = objects.NewRehydrator(s3Client, thresholdSize, c.Logger)
 	}
 	return c.objectProcessor
 }
@@ -86,7 +94,7 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 
 func (c *Config) Emailer() (notification.Emailer, error) {
 	if c.emailer == nil {
-		emailer, err := notification.NewEmailer(c.AWSConfig, c.Env.PennsieveDomain, c.Env.AWSRegion)
+		emailer, err := notification.NewEmailer(c.sesClientSupplier.Get(), c.Env.PennsieveDomain, c.Env.AWSRegion)
 		if err != nil {
 			return nil, err
 		}
@@ -101,14 +109,15 @@ func (c *Config) SetEmailer(emailer notification.Emailer) {
 }
 
 type Env struct {
-	Dataset          *models.Dataset
-	User             *models.User
-	TaskEnv          string
-	PennsieveHost    string
-	IdempotencyTable string
-	TrackingTable    string
-	PennsieveDomain  string
-	AWSRegion        string
+	Dataset           *models.Dataset
+	User              *models.User
+	TaskEnv           string
+	PennsieveHost     string
+	IdempotencyTable  string
+	TrackingTable     string
+	PennsieveDomain   string
+	AWSRegion         string
+	RehydrationBucket string
 }
 
 func LookupEnv() (*Env, error) {
@@ -133,6 +142,10 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	rehydrationBucket, err := shared.NonEmptyFromEnvVar(shared.RehydrationBucketKey)
+	if err != nil {
+		return nil, err
+	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
 		return nil, err
@@ -142,14 +155,15 @@ func LookupEnv() (*Env, error) {
 		return nil, err
 	}
 	return &Env{
-		Dataset:          dataset,
-		User:             user,
-		TaskEnv:          env,
-		PennsieveHost:    pennsieveHost,
-		IdempotencyTable: idempotencyTable,
-		TrackingTable:    trackingTable,
-		PennsieveDomain:  pennsieveDomain,
-		AWSRegion:        awsRegion,
+		Dataset:           dataset,
+		User:              user,
+		TaskEnv:           env,
+		PennsieveHost:     pennsieveHost,
+		IdempotencyTable:  idempotencyTable,
+		TrackingTable:     trackingTable,
+		PennsieveDomain:   pennsieveDomain,
+		AWSRegion:         awsRegion,
+		RehydrationBucket: rehydrationBucket,
 	}, nil
 }
 

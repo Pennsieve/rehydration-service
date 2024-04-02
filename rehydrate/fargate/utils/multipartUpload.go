@@ -36,8 +36,9 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 	//struct for starting a multipart upload
 	startInput := s3.CreateMultipartUploadInput{
-		Bucket: &destBucket,
-		Key:    &destKey,
+		Bucket:       &destBucket,
+		Key:          &destKey,
+		RequestPayer: s3types.RequestPayerRequester,
 	}
 
 	//send command to start copy and get the upload id as it is needed later
@@ -87,6 +88,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 		Key:             &destKey,
 		UploadId:        &uploadId,
 		MultipartUpload: &mpu,
+		RequestPayer:    s3types.RequestPayerRequester,
 	}
 	compOutput, err := svc.CompleteMultipartUpload(context.TODO(), &complete)
 	if err != nil {
@@ -126,6 +128,7 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 			Key:             &destKey,
 			PartNumber:      &partNumber,
 			UploadId:        &uploadId,
+			RequestPayer:    s3types.RequestPayerRequester,
 		}
 		partNumber++
 	}
@@ -162,7 +165,8 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 	if workerFailed {
 		logger.Info("attempting to abort upload")
 		abortIn := s3.AbortMultipartUploadInput{
-			UploadId: aws.String(uploadId),
+			UploadId:     aws.String(uploadId),
+			RequestPayer: s3types.RequestPayerRequester,
 		}
 		//ignoring any errors with aborting the copy
 		_, err := svc.AbortMultipartUpload(context.TODO(), &abortIn)

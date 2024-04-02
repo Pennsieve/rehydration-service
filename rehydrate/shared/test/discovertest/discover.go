@@ -59,26 +59,11 @@ func GetDatasetFileByVersionPath(dataset models.Dataset) string {
 	return fmt.Sprintf("/discover/datasets/%d/versions/%d/files", dataset.ID, dataset.VersionID)
 }
 
-func GetDatasetByVersionPath(dataset models.Dataset) string {
-	return fmt.Sprintf("/discover/datasets/%d/versions/%d", dataset.ID, dataset.VersionID)
-}
-
 func GetDatasetMetadataByVersionPath(dataset models.Dataset) string {
 	return fmt.Sprintf("/discover/datasets/%d/versions/%d/metadata", dataset.ID, dataset.VersionID)
 }
 
 // test.HandlerFuncBuilders that will return models
-
-func GetDatasetByVersionHandlerBuilder(dataset models.Dataset, expectedBucket string) *test.HandlerFuncBuilder {
-	pattern := GetDatasetByVersionPath(dataset)
-	respModel := discover.GetDatasetByVersionResponse{
-		ID:      int32(dataset.ID),
-		Name:    "test dataset",
-		Version: int32(dataset.VersionID),
-		Uri:     fmt.Sprintf("s3://%s/%d/", expectedBucket, dataset.ID),
-	}
-	return test.NewHandlerFuncBuilder(pattern).WithModel(respModel)
-}
 
 func GetDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, expectedDatasetFiles []discover.DatasetFile) *test.HandlerFuncBuilder {
 	pattern := GetDatasetMetadataByVersionPath(dataset)
@@ -120,10 +105,6 @@ func GetDatasetFileByVersionHandlerBuilder(dataset models.Dataset, expectedBucke
 // The struct used by the discover client is not exported (probably just an oversight), otherwise we'd just use that.
 func ErrorResponse(message string, code int) string {
 	return fmt.Sprintf(`{"Code": %d, "Message": %q}`, code, message)
-}
-func ErrorGetDatasetByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {
-	response := ErrorResponse(msg, statusCode)
-	return test.NewHandlerFuncBuilder(GetDatasetByVersionPath(dataset)).WithStatusCode(statusCode).WithModel(response)
 }
 
 func ErrorGetDatasetMetadataByVersionHandlerBuilder(dataset models.Dataset, msg string, statusCode int) *test.HandlerFuncBuilder {

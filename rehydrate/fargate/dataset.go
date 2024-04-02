@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
@@ -13,22 +12,22 @@ import (
 )
 
 type DatasetRehydrator struct {
-	dataset         *models.Dataset
-	user            *models.User
-	pennsieveClient *pennsieve.Client
-	processor       objects.Processor
-	awsConfig       aws.Config
-	logger          *slog.Logger
+	dataset           *models.Dataset
+	user              *models.User
+	pennsieveClient   *pennsieve.Client
+	processor         objects.Processor
+	logger            *slog.Logger
+	rehydrationBucket string
 }
 
 func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRehydrator {
 	return &DatasetRehydrator{
-		dataset:         config.Env.Dataset,
-		user:            config.Env.User,
-		pennsieveClient: config.PennsieveClient(),
-		processor:       config.ObjectProcessor(thresholdSize),
-		awsConfig:       config.AWSConfig,
-		logger:          config.Logger,
+		dataset:           config.Env.Dataset,
+		user:              config.Env.User,
+		pennsieveClient:   config.PennsieveClient(),
+		processor:         config.ObjectProcessor(thresholdSize),
+		logger:            config.Logger,
+		rehydrationBucket: config.Env.RehydrationBucket,
 	}
 }
 
@@ -36,14 +35,6 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 	dataset32 := int32(dr.dataset.ID)
 	version32 := int32(dr.dataset.VersionID)
 
-	datasetByVersionResponse, err := dr.pennsieveClient.Discover.GetDatasetByVersion(ctx, dataset32, version32)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving dataset by version: %w", err)
-	}
-	destinationBucket, err := utils.CreateDestinationBucket(datasetByVersionResponse.Uri)
-	if err != nil {
-		return nil, err
-	}
 	datasetMetadataByVersionResponse, err := dr.pennsieveClient.Discover.GetDatasetMetadataByVersion(ctx, dataset32, version32)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving dataset metadata by version: %w", err)
@@ -79,7 +70,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 				VersionId:  datasetFileByVersionResponse.S3VersionID,
 				Path:       j.Path},
 			DestinationObject{
-				Bucket: destinationBucket,
+				Bucket: dr.rehydrationBucket,
 				Key: utils.CreateDestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
 					j.Path),
@@ -99,7 +90,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 	}
 
 	return &RehydrationResult{
-		Location:    utils.RehydrationLocation(destinationBucket, dr.dataset.ID, dr.dataset.VersionID),
+		Location:    utils.RehydrationLocation(dr.rehydrationBucket, dr.dataset.ID, dr.dataset.VersionID),
 		FileResults: fileResults,
 	}, nil
 }

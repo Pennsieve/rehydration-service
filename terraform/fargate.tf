@@ -3,16 +3,17 @@ data "template_file" "rehydration_task_definition" {
   template = file("${path.module}/task_definition.json.tpl")
 
   vars = {
-    aws_region                = data.aws_region.current_region.name
-    aws_region_shortname      = data.terraform_remote_state.region.outputs.aws_region_shortname
-    container_cpu             = var.container_cpu
-    container_memory          = var.container_memory
-    environment_name          = var.environment_name
-    docker_hub_credentials    = data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn
-    image_tag                 = var.image_tag
-    image_url                 = var.image_url
-    service_name              = var.service_name
-    tier                      = var.tier
+    aws_region             = data.aws_region.current_region.name
+    aws_region_shortname   = data.terraform_remote_state.region.outputs.aws_region_shortname
+    container_cpu          = var.container_cpu
+    container_memory       = var.container_memory
+    environment_name       = var.environment_name
+    docker_hub_credentials = data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn
+    image_tag              = var.image_tag
+    image_url              = var.image_url
+    service_name           = var.service_name
+    tier                   = var.tier
+    rehydration_bucket     = aws_s3_bucket.rehydration_s3_bucket.id
   }
 }
 

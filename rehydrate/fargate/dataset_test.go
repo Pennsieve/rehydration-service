@@ -35,9 +35,10 @@ func TestRehydrate(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Set up S3 for the tests
-			s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig), &s3.CreateBucketInput{
-				Bucket: aws.String(publishBucket),
-			}).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
+			s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3.NewFromConfig(awsConfig),
+				&s3.CreateBucketInput{Bucket: aws.String(publishBucket)},
+				&s3.CreateBucketInput{Bucket: aws.String(taskEnv.RehydrationBucket)},
+			).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
 			defer s3Fixture.Teardown()
 
 			// Set S3 versionIds
@@ -47,7 +48,6 @@ func TestRehydrate(t *testing.T) {
 
 			// Create a mock Discover API server
 			mockDiscover := discovertest.NewServerFixture(t, nil,
-				discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 				discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 				discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 			)
@@ -59,7 +59,7 @@ func TestRehydrate(t *testing.T) {
 			rehydrationResult, err := rehydrator.rehydrate(ctx)
 			require.NoError(t, err)
 
-			assert.Equal(t, utils.RehydrationLocation(publishBucket, dataset.ID, dataset.VersionID), rehydrationResult.Location)
+			assert.Equal(t, utils.RehydrationLocation(taskEnv.RehydrationBucket, dataset.ID, dataset.VersionID), rehydrationResult.Location)
 			assert.Len(t, rehydrationResult.FileResults, datasetFileCount)
 			for _, fileResult := range rehydrationResult.FileResults {
 				assert.NoError(t, fileResult.Error)
@@ -73,7 +73,7 @@ func TestRehydrate(t *testing.T) {
 
 			for _, datasetFile := range testDatasetFiles.Files {
 				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
-				s3Fixture.AssertObjectExists(publishBucket, expectedRehydratedKey, datasetFile.Size)
+				s3Fixture.AssertObjectExists(taskEnv.RehydrationBucket, expectedRehydratedKey, datasetFile.Size)
 			}
 		})
 	}
@@ -99,7 +99,6 @@ func TestRehydrate_S3Errors(t *testing.T) {
 
 	// Create a mock Discover API server
 	mockDiscover := discovertest.NewServerFixture(t, nil,
-		discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 		discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 		discovertest.GetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.ByPath),
 	)
@@ -116,7 +115,7 @@ func TestRehydrate_S3Errors(t *testing.T) {
 
 	result, err := rehydrator.rehydrate(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, utils.RehydrationLocation(publishBucket, dataset.ID, dataset.VersionID), result.Location)
+	assert.Equal(t, utils.RehydrationLocation(taskEnv.RehydrationBucket, dataset.ID, dataset.VersionID), result.Location)
 	assert.Len(t, result.FileResults, testDatasetFileCount)
 	for _, fileResult := range result.FileResults {
 		require.NotNil(t, fileResult.Rehydration)
@@ -143,15 +142,10 @@ func TestRehydrate_DiscoverErrors(t *testing.T) {
 	for testName, testParams := range map[string]struct {
 		discoverBuilders []*test.HandlerFuncBuilder
 	}{
-		"get dataset error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.ErrorGetDatasetByVersionHandlerBuilder(*dataset, "dataset not found", http.StatusNotFound)},
-		},
 		"get dataset metadata error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.ErrorGetDatasetMetadataByVersionHandlerBuilder(*dataset, "internal service error", http.StatusInternalServerError)},
 		},
 		"get dataset file error": {discoverBuilders: []*test.HandlerFuncBuilder{
-			discovertest.GetDatasetByVersionHandlerBuilder(*dataset, publishBucket),
 			discovertest.GetDatasetMetadataByVersionHandlerBuilder(*dataset, testDatasetFiles.DatasetFiles()),
 			discovertest.ErrorGetDatasetFileByVersionHandlerBuilder(*dataset, publishBucket, testDatasetFiles.DatasetFilesByPath(), pathsToFail),
 		}},

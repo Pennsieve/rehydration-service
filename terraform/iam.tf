@@ -48,26 +48,33 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
   }
 
   statement {
-    sid     = "TaskS3Permissions"
-    effect  = "Allow"
+    sid    = "TaskS3PublishBucketsReadOnly"
+    effect = "Allow"
+
     actions = [
-      "s3:List*",
+      "s3:GetObject",
     ]
+
     resources = [
-      "*",
+      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn}/*",
+      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
     ]
   }
 
   statement {
+    sid    = "TaskS3RehydrationBuckets"
     effect = "Allow"
 
     actions = [
-      "s3:*",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket",
+      "s3:AbortMultipartUpload"
     ]
 
     resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
+      aws_s3_bucket.rehydration_s3_bucket.arn,
+      "${aws_s3_bucket.rehydration_s3_bucket.arn}/*",
     ]
   }
 
@@ -251,5 +258,34 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
     ]
     resources = ["*"]
   }
+}
+
+# Create Rehydration S3 Bucket Policy
+data "aws_iam_policy_document" "rehydration_bucket_iam_policy_document" {
+
+  statement {
+    sid       = "AllowPublicObjectAccessToNonRoot"
+    effect    = "Allow"
+    actions   = ["s3:GetObject*"]
+    resources = ["${aws_s3_bucket.rehydration_s3_bucket.arn}/*/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "AllowList"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.rehydration_s3_bucket.arn]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
 }
 

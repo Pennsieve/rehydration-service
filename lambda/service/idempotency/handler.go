@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/ecs"
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
@@ -15,7 +15,7 @@ import (
 const maxRetries = 2
 
 type Config struct {
-	AWSConfig        aws.Config
+	Client           *dynamodb.Client
 	IdempotencyTable string
 }
 type Handler struct {
@@ -25,7 +25,7 @@ type Handler struct {
 }
 
 func NewHandler(config Config, req *request.RehydrationRequest, ecsHandler ecs.Handler) *Handler {
-	store := idempotency.NewStore(config.AWSConfig, req.Logger, config.IdempotencyTable)
+	store := idempotency.NewStore(config.Client, req.Logger, config.IdempotencyTable)
 	return &Handler{
 		store:      store,
 		request:    req,

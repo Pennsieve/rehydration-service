@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/pennsieve/rehydration-service/service/ecs"
 	"github.com/pennsieve/rehydration-service/service/idempotency"
 	"github.com/pennsieve/rehydration-service/service/models"
@@ -22,6 +24,11 @@ var logger = logging.Default
 var AWSConfigFactory = awsconfig.NewFactory()
 
 func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	handlerConfig, err := RehydrationServiceHandlerConfigFromEnvironment()
+	if err != nil {
+		logger.Error("error getting Rehydration service configuration from environment variables", "error", err)
+		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+	}
 	taskConfig, err := models.TaskConfigFromEnvironment()
 	if err != nil {
 		logger.Error("error getting ECS task configuration from environment variables", "error", err)
@@ -46,9 +53,12 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
-	trackingStore := tracking.NewStore(*awsConfig, rehydrationRequest.Logger, taskConfig.TrackingTableName)
+	dyDBClient := dynamodb.NewFromConfig(*awsConfig)
+	sesClient := ses.NewFromConfig(*awsConfig)
 
-	emailer, err := notification.NewEmailer(*awsConfig, taskConfig.PennsieveDomain, taskConfig.AWSRegion)
+	trackingStore := tracking.NewStore(dyDBClient, rehydrationRequest.Logger, taskConfig.TrackingTableName)
+
+	emailer, err := notification.NewEmailer(sesClient, taskConfig.PennsieveDomain, handlerConfig.AWSRegion)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
 		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
@@ -56,7 +66,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	}
 
 	idempotencyConfig := idempotency.Config{
-		AWSConfig:        *awsConfig,
+		Client:           dyDBClient,
 		IdempotencyTable: taskConfig.IdempotencyTableName,
 	}
 

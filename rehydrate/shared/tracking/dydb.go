@@ -21,12 +21,7 @@ type DyDBStore struct {
 	logger *slog.Logger
 }
 
-func NewStore(config aws.Config, logger *slog.Logger, tableName string) Store {
-	return newDyDBStore(config, logger, tableName)
-}
-
-func newDyDBStore(config aws.Config, logger *slog.Logger, tableName string) *DyDBStore {
-	client := dynamodb.NewFromConfig(config)
+func NewStore(client *dynamodb.Client, logger *slog.Logger, tableName string) Store {
 	return &DyDBStore{
 		client: client,
 		table:  tableName,

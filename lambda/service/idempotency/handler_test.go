@@ -237,6 +237,11 @@ func (m *MockStore) OnDeleteRecordError(recordID string, err error) *mock.Call {
 	return m.On("DeleteRecord", mock.Anything, recordID).Return(err)
 }
 
+func (m *MockStore) ExpireRecord(ctx context.Context, recordID string) error {
+	args := m.Called(ctx, recordID)
+	return args.Error(0)
+}
+
 type MockECSHandler struct {
 	mock.Mock
 }

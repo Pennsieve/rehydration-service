@@ -5,6 +5,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -148,6 +149,41 @@ func TestStore_DeleteRecord(t *testing.T) {
 	scanned, err := FromItem(scanAll[0])
 	require.NoError(t, err)
 	require.Equal(t, recordToKeep, *scanned)
+}
+
+func TestStore_ExpireRecord(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
+
+	recordToExpire := Record{
+		ID:                  "1/2/",
+		RehydrationLocation: "bucket/1/2/",
+		Status:              InProgress,
+	}
+
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, createIdempotencyTableInput(testIdempotencyTableName)).WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, &recordToExpire)...)
+	defer dyDB.Teardown()
+
+	err := store.ExpireRecord(ctx, recordToExpire.ID)
+	require.NoError(t, err)
+
+	scanAll := dyDB.Scan(ctx, testIdempotencyTableName)
+	require.Len(t, scanAll, 1)
+	scanned, err := FromItem(scanAll[0])
+	require.NoError(t, err)
+	assert.Equal(t, Expired, scanned.Status)
+	assert.Equal(t, recordToExpire.ID, scanned.ID)
+	assert.Equal(t, recordToExpire.RehydrationLocation, scanned.RehydrationLocation)
+	assert.Equal(t, recordToExpire.FargateTaskARN, scanned.FargateTaskARN)
+
+	nonExistentRecordID := "999/9/"
+	err = store.ExpireRecord(ctx, nonExistentRecordID)
+	var recordNotFound *RecordDoesNotExistsError
+	if assert.ErrorAs(t, err, &recordNotFound) {
+		assert.Equal(t, nonExistentRecordID, recordNotFound.RecordID)
+	}
 }
 
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {

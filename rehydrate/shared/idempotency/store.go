@@ -9,4 +9,5 @@ type Store interface {
 	UpdateRecord(ctx context.Context, record Record) error
 	SetTaskARN(ctx context.Context, recordID string, taskARN string) error
 	DeleteRecord(ctx context.Context, recordID string) error
+	ExpireRecord(ctx context.Context, recordID string) error
 }

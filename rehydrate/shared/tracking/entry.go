@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"strings"
 	"time"
@@ -117,9 +118,5 @@ func DatasetVersionIndexFromItem(item map[string]types.AttributeValue) (*Dataset
 }
 
 func entryItemKeyFromID(id string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{IDAttrName: stringAttributeValue(id)}
-}
-
-func stringAttributeValue(attributeValue string) types.AttributeValue {
-	return &types.AttributeValueMemberS{Value: attributeValue}
+	return map[string]types.AttributeValue{IDAttrName: dydbutils.StringAttributeValue(id)}
 }

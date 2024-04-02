@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"log/slog"
 	"time"
@@ -82,8 +83,8 @@ func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, datas
 	datasetVersionTerm := ":datasetVersion"
 	rehydrationStatusTerm := ":rehydrationStatus"
 	expressionValues := map[string]types.AttributeValue{
-		datasetVersionTerm:    stringAttributeValue(dataset.DatasetVersion()),
-		rehydrationStatusTerm: stringAttributeValue(string(InProgress)),
+		datasetVersionTerm:    dydbutils.StringAttributeValue(dataset.DatasetVersion()),
+		rehydrationStatusTerm: dydbutils.StringAttributeValue(string(InProgress)),
 	}
 
 	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)

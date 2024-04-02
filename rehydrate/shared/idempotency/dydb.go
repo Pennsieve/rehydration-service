@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"log/slog"
 )
 
@@ -142,6 +143,35 @@ func (s *DyDBStore) DeleteRecord(ctx context.Context, recordID string) error {
 	return nil
 }
 
+func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
+	expressionAttrNames := map[string]string{
+		"#status": idempotencyStatusAttrName,
+	}
+	expressionAttrValues := map[string]types.AttributeValue{
+		":status": dydbutils.StringAttributeValue(string(Expired)),
+	}
+	updateExpression := "SET #status = :status"
+
+	conditionExpression := fmt.Sprintf("attribute_exists(%s)", KeyAttrName)
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                       itemKeyFromRecordID(recordID),
+		TableName:                 aws.String(s.table),
+		ExpressionAttributeNames:  expressionAttrNames,
+		ExpressionAttributeValues: expressionAttrValues,
+		UpdateExpression:          aws.String(updateExpression),
+		ConditionExpression:       aws.String(conditionExpression),
+	}
+	if _, err := s.client.UpdateItem(ctx, in); err != nil {
+		var conditionFailedError *types.ConditionalCheckFailedException
+		if errors.As(err, &conditionFailedError) {
+			return &RecordDoesNotExistsError{RecordID: recordID}
+		}
+		return fmt.Errorf("error expiring record %s: %w", recordID, err)
+	}
+	return nil
+}
+
 type RecordAlreadyExistsError struct {
 	Existing           *Record
 	UnmarshallingError error
@@ -154,6 +184,14 @@ func (e *RecordAlreadyExistsError) Error() string {
 	return fmt.Sprintf("record with ID already exists; there was an error when unmarshalling existing Record: %v", e.UnmarshallingError)
 }
 
+type RecordDoesNotExistsError struct {
+	RecordID string
+}
+
+func (e *RecordDoesNotExistsError) Error() string {
+	return fmt.Sprintf("record with ID %s already exists", e.RecordID)
+}
+
 func itemKeyFromRecordID(recordID string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{KeyAttrName: &types.AttributeValueMemberS{Value: recordID}}
+	return map[string]types.AttributeValue{KeyAttrName: dydbutils.StringAttributeValue(recordID)}
 }

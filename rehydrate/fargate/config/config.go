@@ -15,6 +15,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/notification"
+	"github.com/pennsieve/rehydration-service/shared/s3cleaner"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"strconv"
@@ -28,6 +29,7 @@ type Config struct {
 	objectProcessor    objects.Processor
 	trackingStore      tracking.Store
 	emailer            notification.Emailer
+	cleaner            s3cleaner.Cleaner
 	s3ClientSupplier   *awsclient.Supplier[s3.Client, s3.Options]
 	dyDBClientSupplier *awsclient.Supplier[dynamodb.Client, dynamodb.Options]
 	sesClientSupplier  *awsclient.Supplier[ses.Client, ses.Options]
@@ -106,6 +108,19 @@ func (c *Config) Emailer() (notification.Emailer, error) {
 // SetEmailer is for use in tests that would like to override the real emailer with a mock implementation
 func (c *Config) SetEmailer(emailer notification.Emailer) {
 	c.emailer = emailer
+}
+
+func (c *Config) Cleaner() s3cleaner.Cleaner {
+	if c.cleaner == nil {
+		cleaner := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), c.Env.RehydrationBucket)
+		c.cleaner = cleaner
+	}
+	return c.cleaner
+}
+
+// SetCleaner is for use in tests that would like to override the real S3 Cleaner with a mock implementation
+func (c *Config) SetCleaner(cleaner s3cleaner.Cleaner) {
+	c.cleaner = cleaner
 }
 
 type Env struct {

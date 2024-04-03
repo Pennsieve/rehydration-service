@@ -242,6 +242,16 @@ func (m *MockStore) ExpireRecord(ctx context.Context, recordID string) error {
 	return args.Error(0)
 }
 
+func (m *MockStore) LockRecordForExpiration(ctx context.Context, recordID string) error {
+	args := m.Called(ctx, recordID)
+	return args.Error(0)
+}
+
+func (m *MockStore) UnlockRecordForExpiration(ctx context.Context, recordID string) error {
+	args := m.Called(ctx, recordID)
+	return args.Error(0)
+}
+
 type MockECSHandler struct {
 	mock.Mock
 }

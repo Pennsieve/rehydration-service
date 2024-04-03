@@ -172,6 +172,49 @@ func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
 	return nil
 }
 
+func (s *DyDBStore) LockRecordForExpiration(ctx context.Context, recordID string) error {
+	return s.updateStatus(ctx, recordID, Completed, Expired)
+}
+
+func (s *DyDBStore) UnlockRecordForExpiration(ctx context.Context, recordID string) error {
+	return s.updateStatus(ctx, recordID, Expired, Completed)
+}
+
+func (s *DyDBStore) updateStatus(ctx context.Context, recordID string, expectedStatus, newStatus Status) error {
+	expressionAttrNames := map[string]string{
+		"#status": idempotencyStatusAttrName,
+	}
+	expressionAttrValues := map[string]types.AttributeValue{
+		":currentStatus": dydbutils.StringAttributeValue(string(expectedStatus)),
+		":newStatus":     dydbutils.StringAttributeValue(string(newStatus)),
+	}
+	updateExpression := "SET #status = :newStatus"
+
+	conditionExpression := fmt.Sprintf("attribute_exists(%s) AND #status = :currentStatus", KeyAttrName)
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                                 itemKeyFromRecordID(recordID),
+		TableName:                           aws.String(s.table),
+		ExpressionAttributeNames:            expressionAttrNames,
+		ExpressionAttributeValues:           expressionAttrValues,
+		UpdateExpression:                    aws.String(updateExpression),
+		ConditionExpression:                 aws.String(conditionExpression),
+		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+	}
+	if _, err := s.client.UpdateItem(ctx, in); err != nil {
+		var conditionFailedError *types.ConditionalCheckFailedException
+		if errors.As(err, &conditionFailedError) {
+			if len(conditionFailedError.Item) == 0 {
+				return &RecordDoesNotExistsError{RecordID: recordID}
+			}
+			actualStatus := conditionFailedError.Item[idempotencyStatusAttrName].(*types.AttributeValueMemberS).Value
+			return fmt.Errorf("conditional check failed while updating status of record: expected current status %s, actual status: %s", expectedStatus, actualStatus)
+		}
+		return fmt.Errorf("error updating status of record %s: %w", recordID, err)
+	}
+	return nil
+}
+
 type RecordAlreadyExistsError struct {
 	Existing           *Record
 	UnmarshallingError error

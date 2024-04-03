@@ -110,12 +110,15 @@ func (c *Config) SetEmailer(emailer notification.Emailer) {
 	c.emailer = emailer
 }
 
-func (c *Config) Cleaner() s3cleaner.Cleaner {
+func (c *Config) Cleaner() (s3cleaner.Cleaner, error) {
 	if c.cleaner == nil {
-		cleaner := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), c.Env.RehydrationBucket)
+		cleaner, err := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), c.Env.RehydrationBucket, s3cleaner.MaxCleanBatch)
+		if err != nil {
+			return nil, err
+		}
 		c.cleaner = cleaner
 	}
-	return c.cleaner
+	return c.cleaner, nil
 }
 
 // SetCleaner is for use in tests that would like to override the real S3 Cleaner with a mock implementation

@@ -105,12 +105,16 @@ func NewTaskHandler(taskConfig *config.Config, multipartCopyThresholdBytes int64
 	if err != nil {
 		return nil, err
 	}
+	cleaner, err := taskConfig.Cleaner()
+	if err != nil {
+		return nil, err
+	}
 	return &TaskHandler{
 		DatasetRehydrator: NewDatasetRehydrator(taskConfig, multipartCopyThresholdBytes),
 		IdempotencyStore:  taskConfig.IdempotencyStore(),
 		TrackingStore:     taskConfig.TrackingStore(),
 		Emailer:           emailer,
-		Cleaner:           taskConfig.Cleaner(),
+		Cleaner:           cleaner,
 	}, nil
 }
 

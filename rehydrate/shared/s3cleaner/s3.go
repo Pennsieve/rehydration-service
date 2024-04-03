@@ -10,21 +10,25 @@ import (
 )
 
 type S3Cleaner struct {
-	client *s3.Client
-	bucket string
+	client    *s3.Client
+	bucket    string
+	batchSize int32
 }
 
-func NewCleaner(client *s3.Client, bucket string) Cleaner {
-	return &S3Cleaner{
-		client: client,
-		bucket: bucket,
-	}
-}
-
-func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32) (*CleanResponse, error) {
+// NewCleaner creates a new Cleaner to delete "folders" in the given bucket.
+// Deletes are done in batches of the given batchSize. It is an error if batchSize <= 0 or > MaxCleanBatch
+func NewCleaner(client *s3.Client, bucket string, batchSize int32) (Cleaner, error) {
 	if batchSize <= 0 || batchSize > MaxCleanBatch {
 		return nil, fmt.Errorf("illegal argument: batchSize %d is out of range (0, %d]", batchSize, MaxCleanBatch)
 	}
+	return &S3Cleaner{
+		client:    client,
+		bucket:    bucket,
+		batchSize: batchSize,
+	}, nil
+}
+
+func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse, error) {
 	if len(keyPrefix) == 0 {
 		return nil, fmt.Errorf("illegal argument: keyPrefix cannot be empty")
 	}
@@ -37,7 +41,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 	listInput := &s3.ListObjectsV2Input{
 		Bucket:       bucketParam,
 		Prefix:       aws.String(keyPrefix),
-		MaxKeys:      aws.Int32(batchSize),
+		MaxKeys:      aws.Int32(c.batchSize),
 		RequestPayer: types.RequestPayerRequester,
 	}
 	count := 0

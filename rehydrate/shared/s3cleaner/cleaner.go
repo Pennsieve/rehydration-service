@@ -18,11 +18,9 @@ type Cleaner interface {
 	//
 	// It is an error if the keyPrefix does not end in '/'
 	//
-	// Deletes are done in batches of the given batchSize. It is an error if batchSize <= 0 or > MaxCleanBatch
-	//
 	// Callers should check CleanResponse for DeleteObjectErrors which correspond to the non-error errors
 	// DeleteObject returns.
-	Clean(ctx context.Context, keyPrefix string, batchSize int32) (*CleanResponse, error)
+	Clean(ctx context.Context, keyPrefix string) (*CleanResponse, error)
 }
 
 type CleanResponse struct {

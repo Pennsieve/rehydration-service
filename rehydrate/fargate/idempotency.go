@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
-	"github.com/pennsieve/rehydration-service/shared/s3cleaner"
 	"log/slog"
 )
 
@@ -35,7 +34,7 @@ func (h *TaskHandler) finalizeFailedIdempotency(ctx context.Context, recordID st
 	if err := h.IdempotencyStore.ExpireRecord(ctx, recordID); err != nil {
 		return err
 	}
-	cleanResp, err := h.Cleaner.Clean(ctx, recordID, s3cleaner.MaxCleanBatch)
+	cleanResp, err := h.Cleaner.Clean(ctx, recordID)
 	if err != nil {
 		return err
 	}

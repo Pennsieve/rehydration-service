@@ -119,17 +119,55 @@ func (f *S3Fixture) ObjectExists(bucket, key string) bool {
 	return assert.NoError(f.T, err, "unexpected error when checking if object exists")
 }
 
+// ListObjectVersions returns slices of all DeleteMarkers and Versions found in the given bucket under the given prefix if any.
+// It takes care of pagination, so the returned slices are the entire listings. It is assumed that in a test situation that these
+// will be small enough to hold in memory without any issues.
+func (f *S3Fixture) ListObjectVersions(bucket string, prefix *string) struct {
+	DeleteMarkers []types.DeleteMarkerEntry
+	Versions      []types.ObjectVersion
+} {
+	var deleteMarkers []types.DeleteMarkerEntry
+	var versions []types.ObjectVersion
+	listInput := s3.ListObjectVersionsInput{Bucket: aws.String(bucket), Prefix: prefix}
+	var isTruncated bool
+	for makeRequest := true; makeRequest; makeRequest = isTruncated {
+		listOutput, err := f.Client.ListObjectVersions(f.context, &listInput)
+		if err != nil {
+			assert.FailNow(f.T, "error listing test objects", "bucket: %s, error: %v", bucket, err)
+		}
+		deleteMarkers = append(deleteMarkers, listOutput.DeleteMarkers...)
+		versions = append(versions, listOutput.Versions...)
+		isTruncated = aws.ToBool(listOutput.IsTruncated)
+		if isTruncated {
+			listInput.KeyMarker = listOutput.NextKeyMarker
+			listInput.VersionIdMarker = listOutput.NextVersionIdMarker
+		}
+	}
+	return struct {
+		DeleteMarkers []types.DeleteMarkerEntry
+		Versions      []types.ObjectVersion
+	}{
+		deleteMarkers,
+		versions,
+	}
+}
+
+func (f *S3Fixture) AssertPrefixEmpty(bucket string, prefix string) bool {
+	listOutput := f.ListObjectVersions(bucket, &prefix)
+	return assert.Empty(f.T, listOutput.Versions, "prefix %s in bucket %s contains object versions", prefix, bucket) &&
+		assert.Empty(f.T, listOutput.DeleteMarkers, "prefix %s in bucket %s contains delete markers", prefix, bucket)
+}
+
+func (f *S3Fixture) AssertBucketEmpty(bucket string) bool {
+	listOutput := f.ListObjectVersions(bucket, nil)
+	return assert.Empty(f.T, listOutput.Versions, "bucket %s contains object versions", bucket) &&
+		assert.Empty(f.T, listOutput.DeleteMarkers, "bucket %s contains delete markers", bucket)
+}
+
 func (f *S3Fixture) Teardown() {
 	var waitInputs []s3.HeadBucketInput
 	for name := range f.Buckets {
-		listInput := s3.ListObjectVersionsInput{Bucket: aws.String(name)}
-		listOutput, err := f.Client.ListObjectVersions(f.context, &listInput)
-		if err != nil {
-			assert.FailNow(f.T, "error listing test objects", "bucket: %s, error: %v", name, err)
-		}
-		if aws.ToBool(listOutput.IsTruncated) {
-			assert.FailNow(f.T, "test object list is truncated; handling truncated object list is not yet implemented", "bucket: %s, error: %v", name, err)
-		}
+		listOutput := f.ListObjectVersions(name, nil)
 		if len(listOutput.DeleteMarkers)+len(listOutput.Versions) > 0 {
 			objectIds := make([]types.ObjectIdentifier, len(listOutput.DeleteMarkers)+len(listOutput.Versions))
 			i := 0

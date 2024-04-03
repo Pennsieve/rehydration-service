@@ -53,10 +53,7 @@ func TestS3Cleaner_Clean(t *testing.T) {
 			assert.Equal(t, len(objectsToClean), resp.Deleted)
 			assert.Equal(t, len(objectsToClean), resp.Count)
 
-			for _, expectedDeleted := range objectsToClean {
-				key := aws.ToString(expectedDeleted.Key)
-				assert.False(t, s3Fixture.ObjectExists(bucket, key))
-			}
+			s3Fixture.AssertPrefixEmpty(bucket, prefixToClean)
 			for _, expectedKept := range objectsToKeep {
 				key := aws.ToString(expectedKept.Key)
 				assert.True(t, s3Fixture.ObjectExists(bucket, key))

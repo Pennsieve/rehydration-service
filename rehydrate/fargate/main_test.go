@@ -320,6 +320,9 @@ func TestRehydrationTaskHandler_S3CopyErrors(t *testing.T) {
 	assert.Equal(t, dataset.ID, failedEmailCall.dataset.ID)
 	assert.Equal(t, dataset.VersionID, failedEmailCall.dataset.VersionID)
 
+	// Rehydration bucket should have been cleaned up because of the failure
+	s3Fixture.AssertBucketEmpty(taskEnv.RehydrationBucket)
+
 }
 
 func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
@@ -418,6 +421,9 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			assert.Equal(t, entry.UserEmail, failedEmailCall.user.Email)
 			assert.Equal(t, dataset.ID, failedEmailCall.dataset.ID)
 			assert.Equal(t, dataset.VersionID, failedEmailCall.dataset.VersionID)
+
+			// Rehydration bucket should be empty because we never even got to copy
+			s3Fixture.AssertBucketEmpty(taskEnv.RehydrationBucket)
 		})
 
 	}

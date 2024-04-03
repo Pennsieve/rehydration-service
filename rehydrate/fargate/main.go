@@ -117,14 +117,7 @@ func NewTaskHandler(taskConfig *config.Config, multipartCopyThresholdBytes int64
 // failed handles idempotency/notification/tracking for FAILED rehydrations
 func (h *TaskHandler) failed(ctx context.Context) []error {
 	h.Result = NewFailedResult()
-	var errs []error
-	err := h.IdempotencyStore.ExpireRecord(ctx, h.DatasetRehydrator.dataset.DatasetVersion())
-	if err != nil {
-		errs = append(errs, err)
-	}
-	finalizeErrors := h.finalize(ctx)
-	errs = append(errs, finalizeErrors...)
-	return errs
+	return h.finalize(ctx)
 }
 
 // completed handles idempotency/notification/tracking for COMPLETED rehydrations

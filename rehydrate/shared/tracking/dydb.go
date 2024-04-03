@@ -15,6 +15,7 @@ import (
 
 const TableNameKey = "REQUEST_TRACKING_DYNAMODB_TABLE_NAME"
 const DatasetVersionIndexName = "DatasetVersionIndex"
+const ExpirationIndexName = "ExpirationIndex"
 
 type DyDBStore struct {
 	client *dynamodb.Client
@@ -108,6 +109,44 @@ func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, datas
 		lastEvaluatedKey = queryOut.LastEvaluatedKey
 		for _, i := range queryOut.Items {
 			if indexEntry, err := DatasetVersionIndexFromItem(i); err == nil {
+				indexEntries = append(indexEntries, *indexEntry)
+			} else {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return indexEntries, errors.Join(errs...)
+}
+
+func (s *DyDBStore) QueryExpirationIndex(ctx context.Context, expirationThreshold time.Time, limit int32) ([]ExpirationIndex, error) {
+	var indexEntries []ExpirationIndex
+	var errs []error
+	expirationThresholdTerm := ":emailSentDate"
+	completedStatusTerm := ":rehydrationStatus"
+	expressionValues := map[string]types.AttributeValue{
+		expirationThresholdTerm: dydbutils.StringAttributeValue(expirationThreshold.Format(time.RFC3339Nano)),
+		completedStatusTerm:     dydbutils.StringAttributeValue(string(Completed)),
+	}
+
+	keyCondition := fmt.Sprintf("%s = %s AND %s < %s", RehydrationStatusAttrName, completedStatusTerm, EmailSentDateAttrName, expirationThresholdTerm)
+
+	queryIn := &dynamodb.QueryInput{
+		TableName:                 aws.String(s.table),
+		IndexName:                 aws.String(ExpirationIndexName),
+		ExpressionAttributeValues: expressionValues,
+		KeyConditionExpression:    aws.String(keyCondition),
+		Limit:                     aws.Int32(limit),
+	}
+	var lastEvaluatedKey map[string]types.AttributeValue
+	for runQuery := true; runQuery; runQuery = len(lastEvaluatedKey) != 0 {
+		queryIn.ExclusiveStartKey = lastEvaluatedKey
+		queryOut, err := s.client.Query(ctx, queryIn)
+		if err != nil {
+			return nil, fmt.Errorf("error querying ExpirationIndex: %w", err)
+		}
+		lastEvaluatedKey = queryOut.LastEvaluatedKey
+		for _, i := range queryOut.Items {
+			if indexEntry, err := ExpirationIndexFromItem(i); err == nil {
 				indexEntries = append(indexEntries, *indexEntry)
 			} else {
 				errs = append(errs, err)

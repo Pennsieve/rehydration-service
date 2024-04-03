@@ -46,12 +46,25 @@ resource "aws_dynamodb_table" "tracking_table" {
     type = "S"
   }
 
+  attribute {
+    name = "emailSentDate"
+    type = "S"
+  }
+
   global_secondary_index {
+    name               = "DatasetVersionIndex"
     hash_key           = "datasetVersion"
     range_key          = "rehydrationStatus"
-    name               = "DatasetVersionIndex"
     projection_type    = "INCLUDE"
     non_key_attributes = ["id", "userName", "userEmail", "emailSentDate"]
+  }
+
+  global_secondary_index {
+    name               = "ExpirationIndex"
+    hash_key           = "rehydrationStatus"
+    range_key          = "emailSentDate"
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["datasetVersion"]
   }
 
   point_in_time_recovery {

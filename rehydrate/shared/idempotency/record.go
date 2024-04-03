@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"strings"
 )
@@ -52,13 +53,7 @@ func (r *Record) Item() (map[string]types.AttributeValue, error) {
 	return item, nil
 }
 
-func FromItem(item map[string]types.AttributeValue) (*Record, error) {
-	var record Record
-	if err := attributevalue.UnmarshalMap(item, &record); err != nil {
-		return nil, fmt.Errorf("error unmarshalling item to Record: %w", err)
-	}
-	return &record, nil
-}
+var FromItem = dydbutils.FromItem[Record]
 
 func RecordID(datasetID, datasetVersionID int) string {
 	return models.DatasetVersion(datasetID, datasetVersionID)

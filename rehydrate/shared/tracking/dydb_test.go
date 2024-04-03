@@ -189,3 +189,70 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 		assert.Equal(t, unhandledEntryIndicesByID[i.ID], i)
 	}
 }
+
+func TestDyDBStore_QueryExpirationIndex(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+
+	expirationPeriodDays := 14
+	expirationPeriodHours := time.Duration(24 * expirationPeriodDays)
+	today := time.Now()
+	expirationThreshold := today.Add(-time.Hour * expirationPeriodHours)
+	user := models.User{
+		Name:  "First Last",
+		Email: "last@example.com",
+	}
+	dataset1 := models.Dataset{
+		ID:        244,
+		VersionID: 2,
+	}
+	dataset2 := models.Dataset{
+		ID:        355,
+		VersionID: 3,
+	}
+	var entries []test.Itemer
+	candidatesByEmailSentDate := map[string]*tracking.Entry{}
+
+	toBeExpired1 := expirationThreshold.Add(-time.Second)
+	expirationCandidate1 := withStatusAndEmailSent(test.NewTestEntry(dataset1, user), tracking.Completed, &toBeExpired1)
+	candidatesByEmailSentDate[expirationCandidate1.EmailSentDate.Format(time.RFC3339Nano)] = expirationCandidate1
+	entries = append(entries, expirationCandidate1)
+
+	toBeExpired3 := expirationThreshold.Add(-time.Hour * 23)
+	expirationCandidate2 := withStatusAndEmailSent(test.NewTestEntry(dataset1, user), tracking.Completed, &toBeExpired3)
+	candidatesByEmailSentDate[expirationCandidate2.EmailSentDate.Format(time.RFC3339Nano)] = expirationCandidate2
+	entries = append(entries, expirationCandidate2)
+
+	entries = append(entries, withStatusAndEmailSent(test.NewTestEntry(dataset2, user), tracking.Expired, &toBeExpired3))
+
+	toKeep2 := today.Add(-time.Hour)
+	entries = append(entries, withStatusAndEmailSent(test.NewTestEntry(dataset1, user), tracking.Completed, &toKeep2))
+	entries = append(entries, withStatusAndEmailSent(test.NewTestEntry(dataset2, user), tracking.Completed, &toKeep2))
+
+	toKeep3 := today.Add(-time.Hour * 13)
+	entries = append(entries, withStatusAndEmailSent(test.NewTestEntry(dataset1, user), tracking.Completed, &toKeep3))
+	entries = append(entries, withStatusAndEmailSent(test.NewTestEntry(dataset2, user), tracking.Completed, &toKeep3))
+
+	dyDB := test.NewDynamoDBFixture(t, awsConfig, test.TrackingCreateTableInput(testTableName)).WithItems(test.ItemersToPutItemInputs(t, testTableName, entries...)...)
+	defer dyDB.Teardown()
+
+	store := tracking.NewStore(dyDBClient, logging.Default, testTableName)
+	results, err := store.QueryExpirationIndex(ctx, expirationThreshold, 10)
+	require.NoError(t, err)
+	assert.Len(t, results, len(candidatesByEmailSentDate))
+	for _, r := range results {
+		emailSentDateString := r.EmailSentDate.Format(time.RFC3339Nano)
+		require.Contains(t, candidatesByEmailSentDate, emailSentDateString)
+		expected := candidatesByEmailSentDate[emailSentDateString]
+		assert.Equal(t, expected.DatasetVersion, r.DatasetVersion)
+		assert.Equal(t, expected.RehydrationStatus, r.RehydrationStatus)
+	}
+
+}
+
+func withStatusAndEmailSent(entry *tracking.Entry, status tracking.RehydrationStatus, emailSentDate *time.Time) *tracking.Entry {
+	entry.RehydrationStatus = status
+	entry.EmailSentDate = emailSentDate
+	return entry
+}

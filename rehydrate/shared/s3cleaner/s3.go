@@ -40,6 +40,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 		MaxKeys:      aws.Int32(batchSize),
 		RequestPayer: types.RequestPayerRequester,
 	}
+	count := 0
 	var continuationToken *string
 	for hasNextPage := true; hasNextPage; hasNextPage = continuationToken != nil {
 		listInput.ContinuationToken = continuationToken
@@ -48,13 +49,17 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 			return nil, fmt.Errorf("error listing objects from bucket %s under prefix %s: %w", c.bucket, keyPrefix, err)
 		}
 		continuationToken = listOut.NextContinuationToken
-		batch := make([]types.ObjectIdentifier, len(listOut.Contents))
-		for i := 0; i < len(listOut.Contents); i++ {
-			batch[i] = types.ObjectIdentifier{
-				Key: listOut.Contents[i].Key,
+		countInPage := len(listOut.Contents)
+		count += countInPage
+		if countInPage > 0 {
+			batch := make([]types.ObjectIdentifier, countInPage)
+			for i := 0; i < countInPage; i++ {
+				batch[i] = types.ObjectIdentifier{
+					Key: listOut.Contents[i].Key,
+				}
 			}
+			batchedObjectIdentifiers = append(batchedObjectIdentifiers, batch)
 		}
-		batchedObjectIdentifiers = append(batchedObjectIdentifiers, batch)
 		// Can we call deleteObjects in this loop to avoid holding onto the full list of ObjectIdentifiers?
 		// Concern, is that deleting objects under the prefix mid-listing will somehow invalidate the continuationToken
 		// for the next call to ListObjectsV2. Couldn't find mention of the issue one way or the other. But may be worth
@@ -62,6 +67,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string, batchSize int32
 	}
 	response := &CleanResponse{
 		Bucket: c.bucket,
+		Count:  count,
 	}
 	deleteIn := &s3.DeleteObjectsInput{
 		Bucket:       bucketParam,

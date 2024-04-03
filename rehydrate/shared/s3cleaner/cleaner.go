@@ -26,9 +26,14 @@ type Cleaner interface {
 }
 
 type CleanResponse struct {
-	Bucket  string
+	// Bucket is the bucket that was cleaned
+	Bucket string
+	// Count is the number of objects found under the given prefix
+	Count int
+	// Deleted is the number of object successfully deleted
 	Deleted int
-	Errors  []DeleteObjectError
+	// Errors will be non-empty if there were problems deleting individual objects
+	Errors []DeleteObjectError
 }
 
 // DeleteObjectError corresponds to the AWS types.Error type returned by DeleteObject. These are not actually Go errors and are

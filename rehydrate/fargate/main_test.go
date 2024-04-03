@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
+	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/pennsieve/rehydration-service/shared/test/discovertest"
@@ -220,9 +221,11 @@ func TestRehydrationTaskHandler(t *testing.T) {
 	}
 }
 
-func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
+func TestRehydrationTaskHandler_S3CopyErrors(t *testing.T) {
+	test.SetLogLevel(t, slog.LevelError)
+
 	ctx := context.Background()
-	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().WithMinIO().Config(ctx, false)
 	publishBucket := "discover-bucket"
 	taskEnv := newTestConfigEnv()
 	idempotencyTable := taskEnv.IdempotencyTable
@@ -230,6 +233,19 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 
 	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, 50).WithFakeS3VersionsIDs()
 	copyFailPath := testDatasetFiles.Files[17].Path
+
+	// Set up S3 for the tests
+	s3Client := s3.NewFromConfig(awsConfig)
+	s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3Client,
+		&s3.CreateBucketInput{Bucket: aws.String(publishBucket)},
+		&s3.CreateBucketInput{Bucket: aws.String(taskEnv.RehydrationBucket)},
+	).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
+	defer s3Fixture.Teardown()
+
+	// Set S3 versionIds
+	for location, putOutput := range putObjectOutputs {
+		testDatasetFiles.SetS3VersionID(t, location, aws.ToString(putOutput.VersionId))
+	}
 
 	// Setup DynamoDB for tests
 	initialIdempotencyRecord := newInProgressRecord(*dataset)
@@ -265,15 +281,20 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 	taskConfig := config.NewConfig(awsConfig, taskEnv)
 	mockEmailer := new(MockEmailer)
 	taskConfig.SetEmailer(mockEmailer)
-	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(copyFailPath))
+	taskConfig.SetObjectProcessor(NewMockFailingObjectProcessor(s3Client, copyFailPath))
 
 	taskHandler, err := NewTaskHandler(taskConfig, ThresholdSize)
 	require.NoError(t, err)
 	beforeEmailSent := time.Now()
 	err = RehydrationTaskHandler(ctx, taskHandler)
 	require.Error(t, err)
+	joinErr, isJoinErr := err.(interface{ Unwrap() []error })
+	if assert.True(t, isJoinErr) {
+		errs := joinErr.Unwrap()
+		assert.Len(t, errs, 1)
+		require.Contains(t, errs[0].Error(), copyFailPath)
+	}
 	afterEmailSent := time.Now()
-	require.Contains(t, err.Error(), copyFailPath)
 
 	// Idempotency record should have been deleted so that another attempt can be made
 	idempotencyItems := dyDB.Scan(ctx, idempotencyTable)
@@ -303,7 +324,7 @@ func TestRehydrationTaskHandler_S3Errors(t *testing.T) {
 
 func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	ctx := context.Background()
-	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().WithMinIO().Config(ctx, false)
 	publishBucket := "discover-bucket"
 	taskEnv := newTestConfigEnv()
 	idempotencyTable := taskEnv.IdempotencyTable
@@ -327,6 +348,13 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 	} {
 
 		t.Run(testName, func(t *testing.T) {
+			// Set up S3 for the tests just enough so that the S3 clean succeeds when the rehydration fails
+			s3Client := s3.NewFromConfig(awsConfig)
+			s3Fixture := test.NewS3Fixture(t, s3Client,
+				&s3.CreateBucketInput{Bucket: aws.String(taskEnv.RehydrationBucket)},
+			)
+			defer s3Fixture.Teardown()
+
 			// Setup DynamoDB for tests
 			dyDB := test.NewDynamoDBFixture(
 				t,
@@ -357,6 +385,11 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			beforeEmailSent := time.Now()
 			err = RehydrationTaskHandler(ctx, taskHandler)
 			require.Error(t, err)
+			joinErr, isJoinErr := err.(interface{ Unwrap() []error })
+			if assert.True(t, isJoinErr) {
+				errs := joinErr.Unwrap()
+				assert.Len(t, errs, 1)
+			}
 			afterEmailSent := time.Now()
 
 			// idempotency record should have been deleted so that another attempt can be made
@@ -421,22 +454,24 @@ func newInProgressRecord(dataset models.Dataset) *idempotency.Record {
 }
 
 type MockFailingObjectProcessor struct {
-	FailOnPaths map[string]bool
+	FailOnPaths   map[string]bool
+	RealProcessor objects.Processor
 }
 
-func NewMockFailingObjectProcessor(failOnPaths ...string) *MockFailingObjectProcessor {
-	mock := MockFailingObjectProcessor{FailOnPaths: map[string]bool{}}
+func NewMockFailingObjectProcessor(s3Client *s3.Client, failOnPaths ...string) *MockFailingObjectProcessor {
+	realProcessor := objects.NewRehydrator(s3Client, ThresholdSize, logging.Default)
+	mock := MockFailingObjectProcessor{FailOnPaths: map[string]bool{}, RealProcessor: realProcessor}
 	for _, p := range failOnPaths {
 		mock.FailOnPaths[p] = true
 	}
 	return &mock
 }
 
-func (m MockFailingObjectProcessor) Copy(_ context.Context, source objects.Source, _ objects.Destination) error {
+func (m MockFailingObjectProcessor) Copy(ctx context.Context, source objects.Source, destination objects.Destination) error {
 	if _, fail := m.FailOnPaths[source.GetPath()]; fail {
 		return fmt.Errorf("error copying %s", source.GetVersionedUri())
 	}
-	return nil
+	return m.RealProcessor.Copy(ctx, source, destination)
 }
 
 type MockNoCallsObjectProcessor struct {

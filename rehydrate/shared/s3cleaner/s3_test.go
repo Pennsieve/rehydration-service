@@ -15,37 +15,54 @@ import (
 func TestS3Cleaner_Clean(t *testing.T) {
 	bucket := "cleaner-test-bucket"
 	prefixToClean := "43/1/"
-	objectsToClean := generateFiles(bucket, prefixToClean, 103)
 	prefixToKeep := "43/11/"
-	objectsToKeep := generateFiles(bucket, prefixToKeep, 10)
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithMinIO().Config(ctx, false)
 	s3Client := s3.NewFromConfig(awsConfig)
-	putObjectInputs := objectsToClean
-	putObjectInputs = append(putObjectInputs, objectsToKeep...)
 
-	s3Fixture, _ := test.NewS3Fixture(t, s3Client, &s3.CreateBucketInput{
-		Bucket: aws.String(bucket),
-	}).WithObjects(putObjectInputs...)
-	defer s3Fixture.Teardown()
+	// set a small batch size to test Clean's pagination
+	cleanBatchSize := int32(25)
 
-	cleaner := NewCleaner(s3Client, bucket)
-	resp, err := cleaner.Clean(ctx, prefixToClean, 25)
-	require.NoError(t, err)
-	assert.Empty(t, resp.Errors)
-	assert.Equal(t, bucket, resp.Bucket)
-	assert.Equal(t, len(objectsToClean), resp.Deleted)
+	for _, tst := range []struct {
+		name         string
+		toCleanCount int
+	}{
+		{name: "more than batch size", toCleanCount: 103},
+		{name: "fewer than batch size", toCleanCount: 4},
+		{name: "empty prefix", toCleanCount: 0},
+	} {
+		t.Run(tst.name, func(t *testing.T) {
+			objectsToClean := generateFiles(bucket, prefixToClean, tst.toCleanCount)
+			objectsToKeep := generateFiles(bucket, prefixToKeep, 10)
 
-	for _, expectedDeleted := range objectsToClean {
-		key := aws.ToString(expectedDeleted.Key)
-		assert.False(t, s3Fixture.ObjectExists(bucket, key))
-	}
-	for _, expectedKept := range objectsToKeep {
-		key := aws.ToString(expectedKept.Key)
-		assert.True(t, s3Fixture.ObjectExists(bucket, key))
+			putObjectInputs := objectsToClean
+			putObjectInputs = append(putObjectInputs, objectsToKeep...)
+
+			s3Fixture, _ := test.NewS3Fixture(t, s3Client, &s3.CreateBucketInput{
+				Bucket: aws.String(bucket),
+			}).WithObjects(putObjectInputs...)
+			defer s3Fixture.Teardown()
+
+			cleaner := NewCleaner(s3Client, bucket)
+			resp, err := cleaner.Clean(ctx, prefixToClean, cleanBatchSize)
+			require.NoError(t, err)
+			assert.Empty(t, resp.Errors)
+			assert.Equal(t, bucket, resp.Bucket)
+			assert.Equal(t, len(objectsToClean), resp.Deleted)
+			assert.Equal(t, len(objectsToClean), resp.Count)
+
+			for _, expectedDeleted := range objectsToClean {
+				key := aws.ToString(expectedDeleted.Key)
+				assert.False(t, s3Fixture.ObjectExists(bucket, key))
+			}
+			for _, expectedKept := range objectsToKeep {
+				key := aws.ToString(expectedKept.Key)
+				assert.True(t, s3Fixture.ObjectExists(bucket, key))
+			}
+
+		})
 	}
 }
-
 func TestS3Cleaner_Clean_IllegalArgs(t *testing.T) {
 	ctx := context.Background()
 	bucket := "test-clean-bucket"

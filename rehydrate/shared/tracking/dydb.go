@@ -87,11 +87,8 @@ func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, datas
 		rehydrationStatusTerm: dydbutils.StringAttributeValue(string(InProgress)),
 	}
 
-	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)
-	filterExpression := fmt.Sprintf("attribute_not_exists(%s) AND %s = %s",
-		EmailSentDateAttrName,
-		RehydrationStatusAttrName,
-		rehydrationStatusTerm)
+	keyCondition := fmt.Sprintf("%s = %s AND %s = %s", DatasetVersionAttrName, datasetVersionTerm, RehydrationStatusAttrName, rehydrationStatusTerm)
+	filterExpression := fmt.Sprintf("attribute_not_exists(%s)", EmailSentDateAttrName)
 
 	queryIn := &dynamodb.QueryInput{
 		TableName:                 aws.String(s.table),

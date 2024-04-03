@@ -10,13 +10,15 @@ import (
 func TrackingCreateTableInput(tableName string) *dynamodb.CreateTableInput {
 	globalIndices := []types.GlobalSecondaryIndex{{
 		IndexName: aws.String(tracking.DatasetVersionIndexName),
-		KeySchema: []types.KeySchemaElement{{AttributeName: aws.String(tracking.DatasetVersionAttrName), KeyType: types.KeyTypeHash}},
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String(tracking.DatasetVersionAttrName), KeyType: types.KeyTypeHash},
+			{AttributeName: aws.String(tracking.RehydrationStatusAttrName), KeyType: types.KeyTypeRange},
+		},
 		Projection: &types.Projection{
 			NonKeyAttributes: []string{
 				tracking.IDAttrName,
 				tracking.UserNameAttrName,
 				tracking.UserEmailAttrName,
-				tracking.RehydrationStatusAttrName,
 				tracking.EmailSentDateAttrName,
 			},
 			ProjectionType: types.ProjectionTypeInclude,
@@ -31,6 +33,10 @@ func TrackingCreateTableInput(tableName string) *dynamodb.CreateTableInput {
 			},
 			{
 				AttributeName: aws.String(tracking.DatasetVersionAttrName),
+				AttributeType: types.ScalarAttributeTypeS,
+			},
+			{
+				AttributeName: aws.String(tracking.RehydrationStatusAttrName),
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 		},

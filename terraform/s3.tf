@@ -62,5 +62,5 @@ resource "aws_s3_bucket_logging" "rehydration_s3_logging" {
   bucket = aws_s3_bucket.rehydration_s3_bucket.id
 
   target_bucket = data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_logs_s3_bucket_id
-  target_prefix = local.discover_publish_logs_target_prefix
+  target_prefix = local.rehydration_logs_target_prefix
 }

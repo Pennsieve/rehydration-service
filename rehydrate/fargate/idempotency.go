@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"log/slog"
 )
@@ -15,12 +16,11 @@ func (h *TaskHandler) finalizeIdempotency(ctx context.Context) error {
 	if h.Result.Failed() {
 		return h.finalizeFailedIdempotency(ctx, recordID)
 	}
-	record := idempotency.Record{
-		ID:                  recordID,
-		RehydrationLocation: h.Result.RehydrationLocation,
-		Status:              idempotency.Completed,
-	}
-	return h.IdempotencyStore.UpdateRecord(ctx, record)
+	expirationDate := expiration.Date(h.DatasetRehydrator.rehydrationTTLDays)
+	record := idempotency.NewRecord(recordID, idempotency.Completed).
+		WithRehydrationLocation(h.Result.RehydrationLocation).
+		WithExpirationDate(&expirationDate)
+	return h.IdempotencyStore.UpdateRecord(ctx, *record)
 }
 
 // finalizeFailedIdempotency does the following to finalize the idempotency state of a failed rehydration

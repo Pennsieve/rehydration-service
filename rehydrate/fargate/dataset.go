@@ -12,22 +12,24 @@ import (
 )
 
 type DatasetRehydrator struct {
-	dataset           *models.Dataset
-	user              *models.User
-	pennsieveClient   *pennsieve.Client
-	processor         objects.Processor
-	logger            *slog.Logger
-	rehydrationBucket string
+	dataset            *models.Dataset
+	user               *models.User
+	pennsieveClient    *pennsieve.Client
+	processor          objects.Processor
+	logger             *slog.Logger
+	rehydrationBucket  string
+	rehydrationTTLDays int
 }
 
 func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRehydrator {
 	return &DatasetRehydrator{
-		dataset:           config.Env.Dataset,
-		user:              config.Env.User,
-		pennsieveClient:   config.PennsieveClient(),
-		processor:         config.ObjectProcessor(thresholdSize),
-		logger:            config.Logger,
-		rehydrationBucket: config.Env.RehydrationBucket,
+		dataset:            config.Env.Dataset,
+		user:               config.Env.User,
+		pennsieveClient:    config.PennsieveClient(),
+		processor:          config.ObjectProcessor(thresholdSize),
+		logger:             config.Logger,
+		rehydrationBucket:  config.Env.RehydrationBucket,
+		rehydrationTTLDays: config.Env.RehydrationTTLDays,
 	}
 }
 

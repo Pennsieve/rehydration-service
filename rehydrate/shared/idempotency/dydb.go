@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"log/slog"
+	"strings"
+	"time"
 )
 
 const TableNameKey = "FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME"
@@ -29,11 +32,8 @@ func NewStore(dyDBClient *dynamodb.Client, logger *slog.Logger, tableName string
 
 func (s *DyDBStore) SaveInProgress(ctx context.Context, datasetID, datasetVersionID int) error {
 	recordID := RecordID(datasetID, datasetVersionID)
-	record := Record{
-		ID:     recordID,
-		Status: InProgress,
-	}
-	return s.PutRecord(ctx, record)
+	record := NewRecord(recordID, InProgress)
+	return s.PutRecord(ctx, *record)
 }
 
 func (s *DyDBStore) GetRecord(ctx context.Context, recordID string) (*Record, error) {
@@ -88,14 +88,16 @@ func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
 		return fmt.Errorf("error marshalling record for update: %w", err)
 	}
 	expressionAttrNames := map[string]string{
-		"#location": idempotencyRehydrationLocationAttrName,
-		"#status":   idempotencyStatusAttrName,
+		"#location":       RehydrationLocationAttrName,
+		"#status":         StatusAttrName,
+		"#expirationDate": ExpirationDateAttrName,
 	}
 	expressionAttrValues := map[string]types.AttributeValue{
-		":location": asItem[idempotencyRehydrationLocationAttrName],
-		":status":   asItem[idempotencyStatusAttrName],
+		":location":       asItem[RehydrationLocationAttrName],
+		":status":         asItem[StatusAttrName],
+		":expirationDate": asItem[ExpirationDateAttrName],
 	}
-	updateExpression := "SET #location = :location, #status = :status"
+	updateExpression := "SET #location = :location, #status = :status, #expirationDate = :expirationDate"
 
 	in := &dynamodb.UpdateItemInput{
 		Key:                       itemKeyFromRecordID(record.ID),
@@ -112,7 +114,7 @@ func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
 
 func (s *DyDBStore) SetTaskARN(ctx context.Context, recordID string, taskARN string) error {
 	expressionAttrNames := map[string]string{
-		"#taskARN": idempotencyTaskARNAttrName,
+		"#taskARN": TaskARNAttrName,
 	}
 	expressionAttrValues := map[string]types.AttributeValue{
 		":taskARN": &types.AttributeValueMemberS{Value: taskARN},
@@ -145,7 +147,7 @@ func (s *DyDBStore) DeleteRecord(ctx context.Context, recordID string) error {
 
 func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
 	expressionAttrNames := map[string]string{
-		"#status": idempotencyStatusAttrName,
+		"#status": StatusAttrName,
 	}
 	expressionAttrValues := map[string]types.AttributeValue{
 		":status": dydbutils.StringAttributeValue(string(Expired)),
@@ -172,17 +174,68 @@ func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
 	return nil
 }
 
-func (s *DyDBStore) LockRecordForExpiration(ctx context.Context, recordID string) error {
-	return s.updateStatus(ctx, recordID, Completed, Expired)
+func (s *DyDBStore) SetExpirationDate(ctx context.Context, recordID string, expirationDate time.Time) error {
+	expirationDateValue, err := attributevalue.Marshal(expirationDate)
+	if err != nil {
+		return fmt.Errorf("error marshalling expirationDate %s: %w", expirationDate, err)
+	}
+	escapedStatusAttrName := fmt.Sprintf("#%s", StatusAttrName)
+	expressionAttributeNames := map[string]string{
+		escapedStatusAttrName: StatusAttrName,
+	}
+	expirationDateTerm := ":newExpirationDate"
+	statusTerm := ":currentStatus"
+	expressionAttrValues := map[string]types.AttributeValue{
+		expirationDateTerm: expirationDateValue,
+		statusTerm:         dydbutils.StringAttributeValue(string(Completed)),
+	}
+	updateExpression := fmt.Sprintf("SET %s = %s", ExpirationDateAttrName, expirationDateTerm)
+
+	// only set expiration if record actually exists, if status is COMPLETED, and if current expiration date, if any,
+	// is earlier than the new one.
+	conditionExpression := fmt.Sprintf("attribute_exists(%s) AND %s = %s AND(attribute_not_exists(%s) OR %s < %s)",
+		KeyAttrName,
+		escapedStatusAttrName,
+		statusTerm,
+		ExpirationDateAttrName,
+		ExpirationDateAttrName,
+		expirationDateTerm)
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                                 itemKeyFromRecordID(recordID),
+		TableName:                           aws.String(s.table),
+		ExpressionAttributeNames:            expressionAttributeNames,
+		ExpressionAttributeValues:           expressionAttrValues,
+		UpdateExpression:                    aws.String(updateExpression),
+		ConditionExpression:                 aws.String(conditionExpression),
+		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+	}
+	if _, err := s.client.UpdateItem(ctx, in); err != nil {
+		var conditionFailedError *types.ConditionalCheckFailedException
+		if errors.As(err, &conditionFailedError) {
+			if len(conditionFailedError.Item) == 0 {
+				return &RecordDoesNotExistsError{RecordID: recordID}
+			}
+			actualStatus := conditionFailedError.Item[StatusAttrName].(*types.AttributeValueMemberS).Value
+			var message strings.Builder
+			message.WriteString(fmt.Sprintf("unable to set record %s expiration date to %s: current status: %s",
+				recordID,
+				expirationDate.Format(time.RFC3339Nano),
+				actualStatus))
+			if actualExpirationDateAV, ok := conditionFailedError.Item[ExpirationDateAttrName]; ok {
+				message.WriteString(fmt.Sprintf(", current expiration date: %s", actualExpirationDateAV.(*types.AttributeValueMemberS).Value))
+			}
+			return &ConditionFailedError{message: message.String()}
+		}
+		return fmt.Errorf("error setting expiration date of record %s: %w", recordID, err)
+	}
+	return nil
 }
 
-func (s *DyDBStore) UnlockRecordForExpiration(ctx context.Context, recordID string) error {
-	return s.updateStatus(ctx, recordID, Expired, Completed)
-}
-
+// TODO delete this if it ends up unused
 func (s *DyDBStore) updateStatus(ctx context.Context, recordID string, expectedStatus, newStatus Status) error {
 	expressionAttrNames := map[string]string{
-		"#status": idempotencyStatusAttrName,
+		"#status": StatusAttrName,
 	}
 	expressionAttrValues := map[string]types.AttributeValue{
 		":currentStatus": dydbutils.StringAttributeValue(string(expectedStatus)),
@@ -207,7 +260,7 @@ func (s *DyDBStore) updateStatus(ctx context.Context, recordID string, expectedS
 			if len(conditionFailedError.Item) == 0 {
 				return &RecordDoesNotExistsError{RecordID: recordID}
 			}
-			actualStatus := conditionFailedError.Item[idempotencyStatusAttrName].(*types.AttributeValueMemberS).Value
+			actualStatus := conditionFailedError.Item[StatusAttrName].(*types.AttributeValueMemberS).Value
 			return fmt.Errorf("conditional check failed while updating status of record: expected current status %s, actual status: %s", expectedStatus, actualStatus)
 		}
 		return fmt.Errorf("error updating status of record %s: %w", recordID, err)
@@ -232,7 +285,15 @@ type RecordDoesNotExistsError struct {
 }
 
 func (e *RecordDoesNotExistsError) Error() string {
-	return fmt.Sprintf("record with ID %s already exists", e.RecordID)
+	return fmt.Sprintf("record with ID %s does not exist", e.RecordID)
+}
+
+type ConditionFailedError struct {
+	message string
+}
+
+func (e *ConditionFailedError) Error() string {
+	return e.message
 }
 
 func itemKeyFromRecordID(recordID string) map[string]types.AttributeValue {

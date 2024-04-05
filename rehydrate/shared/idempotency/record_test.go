@@ -8,11 +8,8 @@ import (
 )
 
 func TestRecord_ItemRoundTrip(t *testing.T) {
-	record := &Record{
-		ID:                  "1/2/",
-		RehydrationLocation: "bucket/1/2/",
-		Status:              InProgress,
-	}
+	record := NewRecord("1/2/", InProgress).
+		WithRehydrationLocation("bucket/1/2/")
 
 	item, err := record.Item()
 	require.NoError(t, err)

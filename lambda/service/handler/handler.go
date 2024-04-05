@@ -43,7 +43,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 
 	ecsHandler := ecs.NewHandler(*awsConfig, taskConfig)
 
-	rehydrationRequest, err := request.NewRehydrationRequest(lambdaRequest)
+	rehydrationRequest, err := request.NewRehydrationRequest(lambdaRequest, handlerConfig.RehydrationTTLDays)
 	if err != nil {
 		logger.Error("error creating RehydrationRequest", "error", err)
 		var badRequest *request.BadRequestError

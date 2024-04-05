@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"log/slog"
 	"testing"
+	"time"
 )
 
 type handlerTest struct {
@@ -119,11 +120,9 @@ func TestHandler_Handle_RetryMultiple(t *testing.T) {
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 
 	// Fist SaveInProgress returns an error indicating that a record already exists, but does not include info about it
-	alreadyExistsError := &idempotency.RecordAlreadyExistsError{Existing: &idempotency.Record{
-		ID:                  recordID,
-		RehydrationLocation: "/some/old/location",
-		Status:              idempotency.Expired,
-	}}
+	alreadyExistsError := &idempotency.RecordAlreadyExistsError{
+		Existing: idempotency.NewRecord(recordID, idempotency.Expired).WithRehydrationLocation("/some/old/location"),
+	}
 
 	for i := 0; i <= maxRetries; i++ {
 		retryableErrorCount := i + 1
@@ -242,14 +241,17 @@ func (m *MockStore) ExpireRecord(ctx context.Context, recordID string) error {
 	return args.Error(0)
 }
 
-func (m *MockStore) LockRecordForExpiration(ctx context.Context, recordID string) error {
-	args := m.Called(ctx, recordID)
+func (m *MockStore) SetExpirationDate(ctx context.Context, recordID string, expirationDate time.Time) error {
+	args := m.Called(ctx, recordID, expirationDate)
 	return args.Error(0)
 }
 
-func (m *MockStore) UnlockRecordForExpiration(ctx context.Context, recordID string) error {
-	args := m.Called(ctx, recordID)
-	return args.Error(0)
+func (m *MockStore) OnSetExpirationDateSucceed(recordID string, expirationDate time.Time) *mock.Call {
+	return m.On("SetExpirationDate", mock.Anything, recordID, expirationDate).Return(nil)
+}
+
+func (m *MockStore) OnSetExpirationDateError(recordID string, expirationDate time.Time, err error) *mock.Call {
+	return m.On("SetExpirationDate", mock.Anything, recordID, expirationDate).Return(err)
 }
 
 type MockECSHandler struct {

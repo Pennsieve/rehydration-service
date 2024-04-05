@@ -127,7 +127,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			dyDB := test.NewDynamoDBFixture(
 				t,
 				awsConfig,
-				test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable, idempotency.KeyAttrName),
+				test.IdempotencyCreateTableInput(taskEnv.IdempotencyTable),
 				test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 				WithItems(putItemInputs...)
 			defer dyDB.Teardown()
@@ -259,7 +259,7 @@ func TestRehydrationTaskHandler_S3CopyErrors(t *testing.T) {
 	dyDB := test.NewDynamoDBFixture(
 		t,
 		awsConfig,
-		test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
+		test.IdempotencyCreateTableInput(idempotencyTable),
 		test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 		WithItems(
 			test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
@@ -362,7 +362,7 @@ func TestRehydrationTaskHandler_DiscoverErrors(t *testing.T) {
 			dyDB := test.NewDynamoDBFixture(
 				t,
 				awsConfig,
-				test.IdempotencyCreateTableInput(idempotencyTable, idempotency.KeyAttrName),
+				test.IdempotencyCreateTableInput(idempotencyTable),
 				test.TrackingCreateTableInput(taskEnv.TrackingTable)).
 				WithItems(
 					test.ItemerMapToPutItemInputs(t, map[string][]test.Itemer{
@@ -452,11 +452,10 @@ func newTestConfigEnv() *config.Env {
 }
 
 func newInProgressRecord(dataset models.Dataset) *idempotency.Record {
-	return &idempotency.Record{
-		ID:             idempotency.RecordID(dataset.ID, dataset.VersionID),
-		Status:         idempotency.InProgress,
-		FargateTaskARN: "arn:aws:dynamoDB:test:test:test",
-	}
+	return idempotency.NewRecord(
+		idempotency.RecordID(dataset.ID, dataset.VersionID),
+		idempotency.InProgress).
+		WithFargateTaskARN("arn:aws:dynamoDB:test:test:test")
 }
 
 type MockFailingObjectProcessor struct {

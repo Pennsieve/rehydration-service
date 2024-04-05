@@ -32,9 +32,6 @@ func (h *Handler) Handle(ctx context.Context) error {
 	for dv := range datasetVersionCandidates {
 		h.logger.Info("checking datasetVersion for expiration", slog.String("datasetVersion", dv))
 		// Lock DV in the idempotency table by setting to EXPIRED
-		if err = h.idempotencyStore.LockRecordForExpiration(ctx, dv); err != nil {
-			return err
-		}
 		// Look for un-emailed or too-new requests in the tracking table that will disqualify DV from expiration
 
 		// If DV disqualified from expiration, unlock DV in idempotency table by restoring previous status and continue
@@ -42,4 +39,8 @@ func (h *Handler) Handle(ctx context.Context) error {
 		// If DV okayed for expiration, clean the rehydration location in S3 and delete idempotency record for DV
 	}
 	return nil
+}
+
+func Date(rehydrationTTLDays int) time.Time {
+	return time.Now().Add(time.Hour * time.Duration(24*rehydrationTTLDays))
 }

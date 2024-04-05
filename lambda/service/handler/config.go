@@ -1,9 +1,13 @@
 package handler
 
-import "github.com/pennsieve/rehydration-service/shared"
+import (
+	"github.com/pennsieve/rehydration-service/shared"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
+)
 
 type RehydrationServiceHandlerConfig struct {
-	AWSRegion string
+	AWSRegion          string
+	RehydrationTTLDays int
 }
 
 func RehydrationServiceHandlerConfigFromEnvironment() (*RehydrationServiceHandlerConfig, error) {
@@ -11,5 +15,9 @@ func RehydrationServiceHandlerConfigFromEnvironment() (*RehydrationServiceHandle
 	if err != nil {
 		return nil, err
 	}
-	return &RehydrationServiceHandlerConfig{AWSRegion: awsRegion}, nil
+	rehydrationTTLDays, err := shared.IntFromEnvVar(expiration.RehydrationTTLDays)
+	if err != nil {
+		return nil, err
+	}
+	return &RehydrationServiceHandlerConfig{AWSRegion: awsRegion, RehydrationTTLDays: rehydrationTTLDays}, nil
 }

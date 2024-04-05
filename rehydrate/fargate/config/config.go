@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared"
 	"github.com/pennsieve/rehydration-service/shared/awsclient"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -127,15 +128,16 @@ func (c *Config) SetCleaner(cleaner s3cleaner.Cleaner) {
 }
 
 type Env struct {
-	Dataset           *models.Dataset
-	User              *models.User
-	TaskEnv           string
-	PennsieveHost     string
-	IdempotencyTable  string
-	TrackingTable     string
-	PennsieveDomain   string
-	AWSRegion         string
-	RehydrationBucket string
+	Dataset            *models.Dataset
+	User               *models.User
+	TaskEnv            string
+	PennsieveHost      string
+	IdempotencyTable   string
+	TrackingTable      string
+	PennsieveDomain    string
+	AWSRegion          string
+	RehydrationBucket  string
+	RehydrationTTLDays int
 }
 
 func LookupEnv() (*Env, error) {
@@ -164,6 +166,10 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	rehydrationTTLDays, err := shared.IntFromEnvVar(expiration.RehydrationTTLDays)
+	if err != nil {
+		return nil, err
+	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
 		return nil, err
@@ -173,15 +179,16 @@ func LookupEnv() (*Env, error) {
 		return nil, err
 	}
 	return &Env{
-		Dataset:           dataset,
-		User:              user,
-		TaskEnv:           env,
-		PennsieveHost:     pennsieveHost,
-		IdempotencyTable:  idempotencyTable,
-		TrackingTable:     trackingTable,
-		PennsieveDomain:   pennsieveDomain,
-		AWSRegion:         awsRegion,
-		RehydrationBucket: rehydrationBucket,
+		Dataset:            dataset,
+		User:               user,
+		TaskEnv:            env,
+		PennsieveHost:      pennsieveHost,
+		IdempotencyTable:   idempotencyTable,
+		TrackingTable:      trackingTable,
+		PennsieveDomain:    pennsieveDomain,
+		AWSRegion:          awsRegion,
+		RehydrationBucket:  rehydrationBucket,
+		RehydrationTTLDays: rehydrationTTLDays,
 	}, nil
 }
 

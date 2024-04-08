@@ -16,7 +16,7 @@ func (h *TaskHandler) finalizeIdempotency(ctx context.Context) error {
 	if h.Result.Failed() {
 		return h.finalizeFailedIdempotency(ctx, recordID)
 	}
-	expirationDate := expiration.Date(h.DatasetRehydrator.rehydrationTTLDays)
+	expirationDate := expiration.DateFromNow(h.DatasetRehydrator.rehydrationTTLDays)
 	record := idempotency.NewRecord(recordID, idempotency.Completed).
 		WithRehydrationLocation(h.Result.RehydrationLocation).
 		WithExpirationDate(&expirationDate)

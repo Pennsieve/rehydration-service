@@ -147,7 +147,7 @@ func (h *Handler) startRehydrationTask(ctx context.Context) (*Response, error) {
 }
 
 func (h *Handler) setExpirationDate(ctx context.Context, record *idempotency.Record) error {
-	expirationDate := expiration.Date(h.request.RehydrationTTLDays)
+	expirationDate := expiration.DateFromNow(h.request.RehydrationTTLDays)
 	if err := h.store.SetExpirationDate(ctx, record.ID, expirationDate); err != nil {
 		var recordDoesNotExist *idempotency.RecordDoesNotExistsError
 		if errors.As(err, &recordDoesNotExist) {

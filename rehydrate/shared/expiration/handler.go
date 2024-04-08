@@ -41,6 +41,10 @@ func (h *Handler) Handle(ctx context.Context) error {
 	return nil
 }
 
-func Date(rehydrationTTLDays int) time.Time {
-	return time.Now().Add(time.Hour * time.Duration(24*rehydrationTTLDays))
+func DateFromNow(rehydrationTTLDays int) time.Time {
+	return DateFrom(time.Now(), rehydrationTTLDays)
+}
+
+func DateFrom(start time.Time, rehydrationTTLDays int) time.Time {
+	return start.Add(time.Hour * time.Duration(24*rehydrationTTLDays))
 }

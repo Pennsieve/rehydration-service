@@ -67,6 +67,7 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	assert.Equal(t, sharedidempotency.InProgress, record.Status)
 	assert.Empty(t, record.RehydrationLocation)
 	assert.Equal(t, expectedTaskARN, record.FargateTaskARN)
+	assert.Nil(t, record.ExpirationDate)
 
 	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
 	require.Len(t, trackingItems, 1)

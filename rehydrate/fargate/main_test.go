@@ -10,6 +10,7 @@ import (
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -160,6 +161,9 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			assert.Equal(t, expectedTaskARN, updatedIdempotencyRecord.FargateTaskARN)
 			assert.Equal(t, idempotency.Completed, updatedIdempotencyRecord.Status)
 			assert.Equal(t, expectedRehydrationLocation, updatedIdempotencyRecord.RehydrationLocation)
+			assert.NotNil(t, updatedIdempotencyRecord.ExpirationDate)
+			assert.LessOrEqual(t, expiration.DateFrom(beforeTask, taskEnv.RehydrationTTLDays), *updatedIdempotencyRecord.ExpirationDate)
+			assert.GreaterOrEqual(t, expiration.DateFrom(afterTask, taskEnv.RehydrationTTLDays), *updatedIdempotencyRecord.ExpirationDate)
 
 			trackingItems := dyDB.Scan(ctx, taskEnv.TrackingTable)
 			require.Len(t, trackingItems, len(allEntries))
@@ -440,14 +444,15 @@ func newTestConfigEnv() *config.Env {
 	}
 
 	return &config.Env{
-		Dataset:           dataset,
-		User:              user,
-		TaskEnv:           "TEST",
-		IdempotencyTable:  "test-idempotency-table",
-		TrackingTable:     "test-tracking-table",
-		PennsieveDomain:   "pennsieve.example.com",
-		AWSRegion:         "us-test-1",
-		RehydrationBucket: "test-rehydration-bucket",
+		Dataset:            dataset,
+		User:               user,
+		TaskEnv:            "TEST",
+		IdempotencyTable:   "test-idempotency-table",
+		TrackingTable:      "test-tracking-table",
+		PennsieveDomain:    "pennsieve.example.com",
+		AWSRegion:          "us-test-1",
+		RehydrationBucket:  "test-rehydration-bucket",
+		RehydrationTTLDays: 14,
 	}
 }
 

@@ -232,6 +232,53 @@ func (s *DyDBStore) SetExpirationDate(ctx context.Context, recordID string, expi
 	return nil
 }
 
+func (s *DyDBStore) QueryExpirationIndex(ctx context.Context, now time.Time, limit int32) ([]ExpirationIndex, error) {
+	var indexEntries []ExpirationIndex
+	var errs []error
+	escapedStatus := fmt.Sprintf("#%s", StatusAttrName)
+	expressionAttrNames := map[string]string{escapedStatus: StatusAttrName}
+	completedStatusTerm := ":completedStatus"
+	nowTerm := ":now"
+	expressionValues, err := attributevalue.MarshalMap(map[string]any{
+		completedStatusTerm: Completed,
+		nowTerm:             now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling query expression values: status: %s, time: %s: %w",
+			Completed,
+			now,
+			err)
+	}
+
+	keyCondition := fmt.Sprintf("%s = %s AND %s < %s", escapedStatus, completedStatusTerm, ExpirationDateAttrName, nowTerm)
+
+	queryIn := &dynamodb.QueryInput{
+		TableName:                 aws.String(s.table),
+		IndexName:                 aws.String(ExpirationIndexName),
+		ExpressionAttributeNames:  expressionAttrNames,
+		ExpressionAttributeValues: expressionValues,
+		KeyConditionExpression:    aws.String(keyCondition),
+		Limit:                     aws.Int32(limit),
+	}
+	var lastEvaluatedKey map[string]types.AttributeValue
+	for runQuery := true; runQuery; runQuery = len(lastEvaluatedKey) != 0 {
+		queryIn.ExclusiveStartKey = lastEvaluatedKey
+		queryOut, err := s.client.Query(ctx, queryIn)
+		if err != nil {
+			return nil, fmt.Errorf("error querying ExpirationIndex: %w", err)
+		}
+		lastEvaluatedKey = queryOut.LastEvaluatedKey
+		for _, i := range queryOut.Items {
+			if indexEntry, err := ExpirationIndexFromItem(i); err == nil {
+				indexEntries = append(indexEntries, *indexEntry)
+			} else {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return indexEntries, errors.Join(errs...)
+}
+
 // TODO delete this if it ends up unused
 func (s *DyDBStore) updateStatus(ctx context.Context, recordID string, expectedStatus, newStatus Status) error {
 	expressionAttrNames := map[string]string{

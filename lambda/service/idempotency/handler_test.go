@@ -254,6 +254,11 @@ func (m *MockStore) OnSetExpirationDateError(recordID string, expirationDate tim
 	return m.On("SetExpirationDate", mock.Anything, recordID, expirationDate).Return(err)
 }
 
+func (m *MockStore) QueryExpirationIndex(ctx context.Context, now time.Time, limit int32) ([]idempotency.ExpirationIndex, error) {
+	args := m.Called(ctx, now, limit)
+	return args.Get(0).([]idempotency.ExpirationIndex), args.Error(1)
+}
+
 type MockECSHandler struct {
 	mock.Mock
 }

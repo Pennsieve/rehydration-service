@@ -286,6 +286,36 @@ func TestDyDBStore_SetExpirationDate(t *testing.T) {
 
 }
 
+func TestDyDBStore_QueryExpirationIndex(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := idempotency.NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
+	now := time.Now()
+
+	toExpireExpDate := now.Add(-time.Hour * 24)
+	toExpire := idempotency.NewRecord("12/1/", idempotency.Completed).
+		WithRehydrationLocation("s3://bucket/12/1/").
+		WithExpirationDate(&toExpireExpDate)
+	expiredExpDate := now.Add(-time.Hour * time.Duration(24*3))
+	expired := idempotency.NewRecord("34/1/", idempotency.Expired).
+		WithRehydrationLocation("s3://bucket/34/1/").
+		WithExpirationDate(&expiredExpDate)
+	inProgress := idempotency.NewRecord("56/7/", idempotency.InProgress)
+	dyBFixture := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(testIdempotencyTableName)).
+		WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, toExpire, expired, inProgress)...)
+	defer dyBFixture.Teardown()
+
+	queryResults, err := store.QueryExpirationIndex(ctx, now, 10)
+	require.NoError(t, err)
+	assert.Len(t, queryResults, 1)
+	actual := queryResults[0]
+	assert.Equal(t, toExpire.ID, actual.ID)
+	assert.Equal(t, toExpire.Status, actual.Status)
+	assert.Equal(t, toExpire.RehydrationLocation, actual.RehydrationLocation)
+	assert.True(t, toExpire.ExpirationDate.Equal(*actual.ExpirationDate))
+}
+
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {
 	return test.IdempotencyCreateTableInput(tableName)
 }

@@ -13,6 +13,8 @@ const MaxCleanBatch = int32(1000)
 type Cleaner interface {
 	// Clean deletes all objects in this Cleaner's bucket under the given keyPrefix.
 	//
+	// It is an error for the bucket name to be empty.
+	//
 	// It is an error for the keyPrefix to be empty. (If we want to delete a whole bucket, we
 	// should add a separate method for that so that it can't be done accidentally.)
 	//
@@ -20,12 +22,10 @@ type Cleaner interface {
 	//
 	// Callers should check CleanResponse for DeleteObjectErrors which correspond to the non-error errors
 	// DeleteObject returns.
-	Clean(ctx context.Context, keyPrefix string) (*CleanResponse, error)
+	Clean(ctx context.Context, bucket string, keyPrefix string) (*CleanResponse, error)
 }
 
 type CleanResponse struct {
-	// Bucket is the bucket that was cleaned
-	Bucket string
 	// Count is the number of objects found under the given prefix
 	Count int
 	// Deleted is the number of object successfully deleted

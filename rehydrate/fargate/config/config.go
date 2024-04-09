@@ -113,7 +113,7 @@ func (c *Config) SetEmailer(emailer notification.Emailer) {
 
 func (c *Config) Cleaner() (s3cleaner.Cleaner, error) {
 	if c.cleaner == nil {
-		cleaner, err := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), c.Env.RehydrationBucket, s3cleaner.MaxCleanBatch)
+		cleaner, err := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), s3cleaner.MaxCleanBatch)
 		if err != nil {
 			return nil, err
 		}

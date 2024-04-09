@@ -11,24 +11,25 @@ import (
 
 type S3Cleaner struct {
 	client    *s3.Client
-	bucket    string
 	batchSize int32
 }
 
 // NewCleaner creates a new Cleaner to delete "folders" in the given bucket.
 // Deletes are done in batches of the given batchSize. It is an error if batchSize <= 0 or > MaxCleanBatch
-func NewCleaner(client *s3.Client, bucket string, batchSize int32) (Cleaner, error) {
+func NewCleaner(client *s3.Client, batchSize int32) (Cleaner, error) {
 	if batchSize <= 0 || batchSize > MaxCleanBatch {
 		return nil, fmt.Errorf("illegal argument: batchSize %d is out of range (0, %d]", batchSize, MaxCleanBatch)
 	}
 	return &S3Cleaner{
 		client:    client,
-		bucket:    bucket,
 		batchSize: batchSize,
 	}, nil
 }
 
-func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse, error) {
+func (c *S3Cleaner) Clean(ctx context.Context, bucket string, keyPrefix string) (*CleanResponse, error) {
+	if len(bucket) == 0 {
+		return nil, fmt.Errorf("illegal argument: bucket cannot be empty")
+	}
 	if len(keyPrefix) == 0 {
 		return nil, fmt.Errorf("illegal argument: keyPrefix cannot be empty")
 	}
@@ -36,7 +37,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse
 		return nil, fmt.Errorf("illegal argument: keyPrefix must end in '/': %s", keyPrefix)
 	}
 	var batchedObjectIdentifiers [][]types.ObjectIdentifier
-	bucketParam := aws.String(c.bucket)
+	bucketParam := aws.String(bucket)
 
 	listInput := &s3.ListObjectsV2Input{
 		Bucket:       bucketParam,
@@ -50,7 +51,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse
 		listInput.ContinuationToken = continuationToken
 		listOut, err := c.client.ListObjectsV2(ctx, listInput)
 		if err != nil {
-			return nil, fmt.Errorf("error listing objects from bucket %s under prefix %s: %w", c.bucket, keyPrefix, err)
+			return nil, fmt.Errorf("error listing objects from bucket %s under prefix %s: %w", bucket, keyPrefix, err)
 		}
 		continuationToken = listOut.NextContinuationToken
 		countInPage := len(listOut.Contents)
@@ -70,8 +71,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse
 		// experimenting with if there are memory issues.
 	}
 	response := &CleanResponse{
-		Bucket: c.bucket,
-		Count:  count,
+		Count: count,
 	}
 	deleteIn := &s3.DeleteObjectsInput{
 		Bucket:       bucketParam,
@@ -85,7 +85,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, keyPrefix string) (*CleanResponse
 		}
 		deleteOut, err := c.client.DeleteObjects(ctx, deleteIn)
 		if err != nil {
-			msg := fmt.Sprintf("error deleting objects from bucket %s under prefix %s", c.bucket, keyPrefix)
+			msg := fmt.Sprintf("error deleting objects from bucket %s under prefix %s", bucket, keyPrefix)
 			if deleted > 0 {
 				msg = fmt.Sprintf("%s (%d objects already deleted)", msg, deleted)
 			}

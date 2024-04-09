@@ -12,5 +12,4 @@ type Store interface {
 	// QueryDatasetVersionIndexUnhandled looks up DatasetVersionIndex entries for the give dataset where no emailSentDate has been set.
 	// limit is a page size, but this method does the pagination and returns all matching entries in one call.
 	QueryDatasetVersionIndexUnhandled(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error)
-	QueryExpirationIndex(ctx context.Context, expirationThreshold time.Time, limit int32) ([]ExpirationIndex, error)
 }

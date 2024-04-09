@@ -75,24 +75,6 @@ type Entry struct {
 	FargateTaskARN  string    `dynamodbav:"fargateTaskARN,omitempty"`
 }
 
-// ExpirationIndex represents a Global Secondary Index to the Entry table.
-// The partition key of this index is RehydrationStatus and the sort key is EmailSentDate so that we can query for
-// tasks that were COMPLETED X days in the past to find DatasetVersion candidates for expiration.
-// (There may be newer requests for this DatasetVersion that prevent expiration. A second query will be necessary.)
-//
-// Since EmailSentDate is nullable, this will be a sparse index, only containing entries where EmailSentDate is present.
-//
-// Chose not to embed this in DatasetVersionIndex to avoid a triple embedding in Entry. Have to live with the repetition.
-type ExpirationIndex struct {
-	DatasetVersion    string            `dynamodbav:"datasetVersion"`
-	RehydrationStatus RehydrationStatus `dynamodbav:"rehydrationStatus"`
-	// EmailSentDate is a pointer because omitempty does not work with time.Time:
-	// https://github.com/aws/aws-sdk-go/issues/2040 (issue is for the V1 SDK, but I saw the same thing with V2)
-	// This is the cleanest way to ensure that entries that haven't had their email sent date result in table items
-	// with no email sent date field attribute instead of having the attribute set to the time.Time zero value 0001-01-01T00:00:00Z
-	EmailSentDate *time.Time `dynamodbav:"emailSentDate,omitempty"`
-}
-
 func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) *Entry {
 	requestDate := time.Now()
 	return &Entry{
@@ -122,8 +104,6 @@ func (r *Entry) Item() (map[string]types.AttributeValue, error) {
 var FromItem = dydbutils.FromItem[Entry]
 
 var DatasetVersionIndexFromItem = dydbutils.FromItem[DatasetVersionIndex]
-
-var ExpirationIndexFromItem = dydbutils.FromItem[ExpirationIndex]
 
 func entryItemKeyFromID(id string) map[string]types.AttributeValue {
 	return map[string]types.AttributeValue{IDAttrName: dydbutils.StringAttributeValue(id)}

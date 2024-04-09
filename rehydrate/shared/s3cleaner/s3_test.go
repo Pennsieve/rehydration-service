@@ -44,12 +44,11 @@ func TestS3Cleaner_Clean(t *testing.T) {
 			}).WithObjects(putObjectInputs...)
 			defer s3Fixture.Teardown()
 
-			cleaner, err := NewCleaner(s3Client, bucket, int32(cleanBatchSize))
+			cleaner, err := NewCleaner(s3Client, int32(cleanBatchSize))
 			require.NoError(t, err)
-			resp, err := cleaner.Clean(ctx, prefixToClean)
+			resp, err := cleaner.Clean(ctx, bucket, prefixToClean)
 			require.NoError(t, err)
 			assert.Empty(t, resp.Errors)
-			assert.Equal(t, bucket, resp.Bucket)
 			assert.Equal(t, len(objectsToClean), resp.Deleted)
 			assert.Equal(t, len(objectsToClean), resp.Count)
 
@@ -65,7 +64,6 @@ func TestS3Cleaner_Clean(t *testing.T) {
 
 func TestS3Cleaner_NewCleaner_IllegalArgs(t *testing.T) {
 	ctx := context.Background()
-	bucket := "test-clean-bucket"
 	awsConfig := test.NewAWSEndpoints(t).WithMinIO().Config(ctx, false)
 	for _, tst := range []struct {
 		name          string
@@ -77,28 +75,30 @@ func TestS3Cleaner_NewCleaner_IllegalArgs(t *testing.T) {
 		{"batch too large", MaxCleanBatch * 2, "out of range"},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
-			_, err := NewCleaner(s3.NewFromConfig(awsConfig), bucket, tst.batchSize)
+			_, err := NewCleaner(s3.NewFromConfig(awsConfig), tst.batchSize)
 			assert.ErrorContains(t, err, tst.expectedInErr)
 		})
 	}
 }
 func TestS3Cleaner_Clean_IllegalArgs(t *testing.T) {
 	ctx := context.Background()
-	bucket := "test-clean-bucket"
+	testBucketName := "test-clean-bucket"
 	awsConfig := test.NewAWSEndpoints(t).WithMinIO().Config(ctx, false)
-	cleaner, err := NewCleaner(s3.NewFromConfig(awsConfig), bucket, MaxCleanBatch)
+	cleaner, err := NewCleaner(s3.NewFromConfig(awsConfig), MaxCleanBatch)
 	require.NoError(t, err)
 	for _, tst := range []struct {
 		name          string
+		bucket        string
 		keyPrefix     string
 		batchSize     int32
 		expectedInErr string
 	}{
-		{"empty prefix", "", MaxCleanBatch, "empty"},
-		{"prefix does not end in slash", "12/23", MaxCleanBatch, "'/'"},
+		{"empty bucket", "", "34/5/", MaxCleanBatch, "empty"},
+		{"empty prefix", testBucketName, "", MaxCleanBatch, "empty"},
+		{"prefix does not end in slash", testBucketName, "12/23", MaxCleanBatch, "'/'"},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
-			_, err := cleaner.Clean(ctx, tst.keyPrefix)
+			_, err := cleaner.Clean(ctx, tst.bucket, tst.keyPrefix)
 			assert.ErrorContains(t, err, tst.expectedInErr)
 		})
 	}

@@ -34,12 +34,13 @@ func (h *TaskHandler) finalizeFailedIdempotency(ctx context.Context, recordID st
 	if err := h.IdempotencyStore.ExpireRecord(ctx, recordID); err != nil {
 		return err
 	}
-	cleanResp, err := h.Cleaner.Clean(ctx, recordID)
+	rehydrationBucket := h.DatasetRehydrator.rehydrationBucket
+	cleanResp, err := h.Cleaner.Clean(ctx, rehydrationBucket, recordID)
 	if err != nil {
 		return err
 	}
 	h.DatasetRehydrator.logger.Info("cleaned rehydration location",
-		slog.Group("rehydrationLocation", slog.String("bucket", cleanResp.Bucket), slog.String("prefix", recordID)),
+		slog.Group("rehydrationLocation", slog.String("bucket", rehydrationBucket), slog.String("prefix", recordID)),
 		slog.Int("fileCount", cleanResp.Count),
 		slog.Int("deletedCount", cleanResp.Deleted))
 	if len(cleanResp.Errors) == 0 {
@@ -47,7 +48,7 @@ func (h *TaskHandler) finalizeFailedIdempotency(ctx context.Context, recordID st
 	}
 	for _, e := range cleanResp.Errors {
 		h.DatasetRehydrator.logger.Error("error deleting object",
-			slog.Group("object", slog.String("bucket", cleanResp.Bucket), slog.String("key", e.Key)),
+			slog.Group("object", slog.String("bucket", rehydrationBucket), slog.String("key", e.Key)),
 			slog.String("error", e.Message))
 	}
 	return nil

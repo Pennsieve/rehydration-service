@@ -27,3 +27,20 @@ func TestFromItem(t *testing.T) {
 	_, err = fromItem(bad)
 	assert.ErrorContains(t, err, fmt.Sprintf("%T", ItemStruct{}))
 }
+
+func TestItemImpl(t *testing.T) {
+	structTag := "timestamp"
+	type ItemStruct struct {
+		Timestamp time.Time `dynamodbav:"timestamp"`
+	}
+
+	value := ItemStruct{Timestamp: time.Now()}
+	asItem, err := ItemImpl(value)
+	require.NoError(t, err)
+	assert.Len(t, asItem, 1)
+	assert.Contains(t, asItem, structTag)
+	stringAttribute, ok := asItem[structTag].(*types.AttributeValueMemberS)
+	if assert.True(t, ok) {
+		assert.Equal(t, value.Timestamp.Format(time.RFC3339Nano), stringAttribute.Value)
+	}
+}

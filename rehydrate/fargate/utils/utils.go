@@ -17,6 +17,7 @@ func CreateDestinationKey(datasetId int, versionId int, filePath string) string 
 }
 
 func CreateVersionedSource(uri string, version string) string {
+	// TODO don't ignore error
 	u, _ := url.Parse(uri)
 	return fmt.Sprintf("%s%s?versionId=%s",
 		u.Host, u.Path, version)

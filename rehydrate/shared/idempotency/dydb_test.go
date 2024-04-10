@@ -3,6 +3,7 @@ package idempotency_test
 import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/google/uuid"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/test"
@@ -314,6 +315,91 @@ func TestDyDBStore_QueryExpirationIndex(t *testing.T) {
 	assert.Equal(t, toExpire.Status, actual.Status)
 	assert.Equal(t, toExpire.RehydrationLocation, actual.RehydrationLocation)
 	assert.True(t, toExpire.ExpirationDate.Equal(*actual.ExpirationDate))
+}
+
+func TestDyDBStore_ExpireByIndex(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := idempotency.NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
+	now := time.Now()
+
+	toExpireExpDate := now.Add(-time.Hour * 24)
+	toExpire := idempotency.NewRecord("12/1/", idempotency.Completed).
+		WithRehydrationLocation("s3://bucket/12/1/").
+		WithFargateTaskARN(uuid.NewString()).
+		WithExpirationDate(&toExpireExpDate)
+
+	dyBFixture := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(testIdempotencyTableName)).
+		WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, toExpire)...)
+	defer dyBFixture.Teardown()
+
+	result, err := store.ExpireByIndex(ctx, toExpire.ExpirationIndex)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, toExpire.ID, result.ID)
+	assert.Equal(t, idempotency.Expired, result.Status)
+	assert.Equal(t, toExpire.RehydrationLocation, result.RehydrationLocation)
+	assert.True(t, toExpire.ExpirationDate.Equal(*result.ExpirationDate))
+
+	allItems := dyBFixture.Scan(ctx, testIdempotencyTableName)
+	require.Len(t, allItems, 1)
+	item := allItems[0]
+	actualRecord, err := idempotency.FromItem(item)
+	require.NoError(t, err)
+	assert.Equal(t, toExpire.ID, actualRecord.ID)
+	assert.Equal(t, idempotency.Expired, actualRecord.Status)
+	assert.Equal(t, toExpire.RehydrationLocation, actualRecord.RehydrationLocation)
+	assert.True(t, toExpire.ExpirationDate.Equal(*actualRecord.ExpirationDate))
+	assert.Equal(t, toExpire.FargateTaskARN, actualRecord.FargateTaskARN)
+
+}
+
+func TestDyDBStore_ExpireByIndex_ConditionCheckFailure(t *testing.T) {
+	ctx := context.Background()
+	awsConfig := test.NewAWSEndpoints(t).WithDynamoDB().Config(ctx, false)
+	dyDBClient := dynamodb.NewFromConfig(awsConfig)
+	store := idempotency.NewStore(dyDBClient, logging.Default, testIdempotencyTableName)
+	now := time.Now()
+
+	toExpireExpDate := now.Add(-time.Hour * 24)
+	record := idempotency.NewRecord("12/1/", idempotency.Completed).
+		WithRehydrationLocation("s3://bucket/12/1/").
+		WithFargateTaskARN(uuid.NewString()).
+		WithExpirationDate(&toExpireExpDate)
+
+	dyBFixture := test.NewDynamoDBFixture(t, awsConfig, test.IdempotencyCreateTableInput(testIdempotencyTableName)).
+		WithItems(test.ItemersToPutItemInputs(t, testIdempotencyTableName, record)...)
+	defer dyBFixture.Teardown()
+
+	outdatedExpirationDate := record.ExpirationDate.Add(-time.Hour * time.Duration(24*14))
+	outdatedIndex := idempotency.ExpirationIndex{
+		ID:                  record.ID,
+		RehydrationLocation: record.RehydrationLocation,
+		Status:              record.Status,
+		ExpirationDate:      &outdatedExpirationDate,
+	}
+
+	_, err := store.ExpireByIndex(ctx, outdatedIndex)
+	require.Error(t, err)
+	var conditionCheckError *idempotency.ConditionFailedError
+	if assert.ErrorAs(t, err, &conditionCheckError) {
+		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.Status)
+		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.ID)
+		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.ExpirationDate.Format(time.RFC3339Nano))
+		assert.Contains(t, conditionCheckError.Error(), record.ExpirationDate.Format(time.RFC3339Nano))
+	}
+
+	allItems := dyBFixture.Scan(ctx, testIdempotencyTableName)
+	require.Len(t, allItems, 1)
+	item := allItems[0]
+	actualRecord, err := idempotency.FromItem(item)
+	require.NoError(t, err)
+	assert.Equal(t, record.ID, actualRecord.ID)
+	assert.Equal(t, record.Status, actualRecord.Status)
+	assert.Equal(t, record.RehydrationLocation, actualRecord.RehydrationLocation)
+	assert.True(t, record.ExpirationDate.Equal(*actualRecord.ExpirationDate))
+	assert.Equal(t, record.FargateTaskARN, actualRecord.FargateTaskARN)
 }
 
 func createIdempotencyTableInput(tableName string) *dynamodb.CreateTableInput {

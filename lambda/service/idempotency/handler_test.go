@@ -259,6 +259,11 @@ func (m *MockStore) QueryExpirationIndex(ctx context.Context, now time.Time, lim
 	return args.Get(0).([]idempotency.ExpirationIndex), args.Error(1)
 }
 
+func (m *MockStore) ExpireByIndex(ctx context.Context, index idempotency.ExpirationIndex) (*idempotency.Record, error) {
+	args := m.Called(ctx, index)
+	return args.Get(0).(*idempotency.Record), args.Error(1)
+}
+
 type MockECSHandler struct {
 	mock.Mock
 }

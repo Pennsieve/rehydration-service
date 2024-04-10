@@ -15,4 +15,5 @@ type Store interface {
 	ExpireRecord(ctx context.Context, recordID string) error
 	SetExpirationDate(ctx context.Context, recordID string, expirationDate time.Time) error
 	QueryExpirationIndex(ctx context.Context, now time.Time, limit int32) ([]ExpirationIndex, error)
+	ExpireByIndex(ctx context.Context, index ExpirationIndex) (*Record, error)
 }

@@ -279,6 +279,64 @@ func (s *DyDBStore) QueryExpirationIndex(ctx context.Context, now time.Time, lim
 	return indexEntries, errors.Join(errs...)
 }
 
+func (s *DyDBStore) ExpireByIndex(ctx context.Context, index ExpirationIndex) (*Record, error) {
+	expressionAttrNames := map[string]string{
+		"#status": StatusAttrName,
+	}
+	asItem, err := index.Item()
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling index: %w", err)
+	}
+	expectedStatus := asItem[StatusAttrName]
+	newStatus := Expired
+	expectedExpirationDate := asItem[ExpirationDateAttrName]
+	expressionAttrValues := map[string]types.AttributeValue{
+		":expectedStatus":         expectedStatus,
+		":newStatus":              dydbutils.StringAttributeValue(string(newStatus)),
+		":expectedExpirationDate": expectedExpirationDate,
+	}
+	updateExpression := "SET #status = :newStatus"
+
+	conditionExpression := fmt.Sprintf("attribute_exists(%s) AND #status = :expectedStatus AND %s = :expectedExpirationDate",
+		KeyAttrName,
+		ExpirationDateAttrName)
+
+	in := &dynamodb.UpdateItemInput{
+		Key:                                 itemKeyFromRecordID(index.ID),
+		TableName:                           aws.String(s.table),
+		ExpressionAttributeNames:            expressionAttrNames,
+		ExpressionAttributeValues:           expressionAttrValues,
+		UpdateExpression:                    aws.String(updateExpression),
+		ReturnValues:                        types.ReturnValueAllNew,
+		ConditionExpression:                 aws.String(conditionExpression),
+		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
+	}
+	out, err := s.client.UpdateItem(ctx, in)
+	if err != nil {
+		var conditionFailedError *types.ConditionalCheckFailedException
+		if errors.As(err, &conditionFailedError) {
+			if len(conditionFailedError.Item) == 0 {
+				return nil, &RecordDoesNotExistsError{RecordID: index.ID}
+			}
+			actualStatus := conditionFailedError.Item[StatusAttrName].(*types.AttributeValueMemberS).Value
+			actualExpirationDate := conditionFailedError.Item[ExpirationDateAttrName].(*types.AttributeValueMemberS).Value
+			return nil,
+				&ConditionFailedError{fmt.Sprintf("conditional check failed while expiring record %s: expected current status %s, actual status: %s, expected current expiration date %s, actual expiration date: %s",
+					index.ID,
+					expectedStatus,
+					actualStatus,
+					expectedExpirationDate,
+					actualExpirationDate)}
+		}
+		return nil, fmt.Errorf("error updating status of record %s: %w", index.ID, err)
+	}
+	record, err := FromItem(out.Attributes)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling updated record: %w", err)
+	}
+	return record, nil
+}
+
 // TODO delete this if it ends up unused
 func (s *DyDBStore) updateStatus(ctx context.Context, recordID string, expectedStatus, newStatus Status) error {
 	expressionAttrNames := map[string]string{

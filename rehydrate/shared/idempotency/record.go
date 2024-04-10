@@ -2,7 +2,6 @@ package idempotency
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -80,12 +79,11 @@ func (r *Record) WithExpirationDate(expirationDate *time.Time) *Record {
 }
 
 func (r *Record) Item() (map[string]types.AttributeValue, error) {
-	item, err := attributevalue.MarshalMap(r)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling Record %+v to DynamoDB item: %w", r, err)
+	return dydbutils.ItemImpl(r)
+}
 
-	}
-	return item, nil
+func (e *ExpirationIndex) Item() (map[string]types.AttributeValue, error) {
+	return dydbutils.ItemImpl(e)
 }
 
 var FromItem = dydbutils.FromItem[Record]

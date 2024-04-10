@@ -2,13 +2,11 @@ package s3cleaner
 
 import (
 	"context"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pennsieve/rehydration-service/shared/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
 )
 
@@ -33,8 +31,8 @@ func TestS3Cleaner_Clean(t *testing.T) {
 		{name: "empty prefix", toCleanCount: 0},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
-			objectsToClean := generateFiles(bucket, prefixToClean, tst.toCleanCount)
-			objectsToKeep := generateFiles(bucket, prefixToKeep, 10)
+			objectsToClean := test.GeneratePutObjectInputs(bucket, prefixToClean, tst.toCleanCount)
+			objectsToKeep := test.GeneratePutObjectInputs(bucket, prefixToKeep, 10)
 
 			putObjectInputs := objectsToClean
 			putObjectInputs = append(putObjectInputs, objectsToKeep...)
@@ -102,19 +100,4 @@ func TestS3Cleaner_Clean_IllegalArgs(t *testing.T) {
 			assert.ErrorContains(t, err, tst.expectedInErr)
 		})
 	}
-}
-
-func generateFiles(bucket string, prefix string, count int) []*s3.PutObjectInput {
-	var putObjectIns []*s3.PutObjectInput
-	for i := 0; i < count; i++ {
-		name := fmt.Sprintf("file%d.txt", i)
-		key := fmt.Sprintf("%s%s", prefix, name)
-		content := fmt.Sprintf("content of %s\n", name)
-		putObjectIns = append(putObjectIns, &s3.PutObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-			Body:   strings.NewReader(content),
-		})
-	}
-	return putObjectIns
 }

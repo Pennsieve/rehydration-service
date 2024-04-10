@@ -17,3 +17,11 @@ func FromItem[T any](item map[string]types.AttributeValue) (*T, error) {
 	}
 	return &value, nil
 }
+
+func ItemImpl[T any](value T) (map[string]types.AttributeValue, error) {
+	item, err := attributevalue.MarshalMap(value)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling %+v to item: %w", value, err)
+	}
+	return item, nil
+}

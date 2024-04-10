@@ -2,7 +2,6 @@ package tracking
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -93,12 +92,7 @@ func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStre
 }
 
 func (r *Entry) Item() (map[string]types.AttributeValue, error) {
-	item, err := attributevalue.MarshalMap(r)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling Entry %+v to DynamoDB item: %w", r, err)
-
-	}
-	return item, nil
+	return dydbutils.ItemImpl(r)
 }
 
 var FromItem = dydbutils.FromItem[Entry]

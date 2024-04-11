@@ -22,7 +22,8 @@ func TestCreateDestinationKey(t *testing.T) {
 func TestCreateVersionedSource(t *testing.T) {
 	datasetUri := "s3://pennsieve-dev-discover-publish50-use1/5069/metadata/schema.json"
 	version := "48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
-	result := utils.CreateVersionedSource(datasetUri, version)
+	result, err := utils.CreateVersionedCopySource(datasetUri, version)
+	require.NoError(t, err)
 	expectedResult := "pennsieve-dev-discover-publish50-use1/5069/metadata/schema.json?versionId=48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
 	if result != expectedResult {
 		t.Errorf("got %s, expected %s", result, expectedResult)

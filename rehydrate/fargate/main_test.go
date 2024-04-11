@@ -479,7 +479,7 @@ func NewMockFailingObjectProcessor(s3Client *s3.Client, failOnPaths ...string) *
 
 func (m MockFailingObjectProcessor) Copy(ctx context.Context, source objects.Source, destination objects.Destination) error {
 	if _, fail := m.FailOnPaths[source.GetPath()]; fail {
-		return fmt.Errorf("error copying %s", source.GetVersionedUri())
+		return fmt.Errorf("error copying %s", source.GetCopySource())
 	}
 	return m.RealProcessor.Copy(ctx, source, destination)
 }
@@ -493,7 +493,7 @@ func NewNoCallsObjectProcessor(t require.TestingT) *MockNoCallsObjectProcessor {
 }
 
 func (m *MockNoCallsObjectProcessor) Copy(_ context.Context, source objects.Source, destination objects.Destination) error {
-	assert.Failf(m.testingT, "unexpected call to S3 Copy", "source: %s, destination: %s", source.GetVersionedUri(), destination.GetKey())
+	assert.Failf(m.testingT, "unexpected call to S3 Copy", "source: %s, destination: %s", source.GetCopySource(), destination.GetKey())
 	return nil
 }
 

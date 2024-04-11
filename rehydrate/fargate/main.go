@@ -60,7 +60,7 @@ func RehydrationTaskHandler(ctx context.Context, taskHandler *TaskHandler) error
 	var errs []error
 	for _, result := range results.FileResults {
 		if result.Error != nil {
-			errs = append(errs, fmt.Errorf("error rehydrating file %s: %w", result.Rehydration.Src.GetVersionedUri(), result.Error))
+			errs = append(errs, fmt.Errorf("error rehydrating file %s: %w", result.Rehydration.Src.GetCopySource(), result.Error))
 		}
 	}
 

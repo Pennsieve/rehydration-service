@@ -11,7 +11,7 @@ import (
 const MaxCleanBatch = int32(1000)
 
 type Cleaner interface {
-	// Clean deletes all objects in this Cleaner's bucket under the given keyPrefix.
+	// Clean deletes all objects in the given bucket under the given keyPrefix.
 	//
 	// It is an error for the bucket name to be empty.
 	//

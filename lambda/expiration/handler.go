@@ -17,7 +17,7 @@ import (
 	"net/http"
 )
 
-// awsConfigFactory so that one could set the AWS config in a test before calling ExpirationHandler.
+// awsConfigFactory so that one could set the AWS config in a test using MinIO and dynamodb-local before calling ExpirationHandler.
 var awsConfigFactory = awsconfig.NewFactory()
 var logger = logging.Default
 

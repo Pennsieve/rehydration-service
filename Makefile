@@ -1,10 +1,11 @@
-.PHONY: help go-get npm-install html-clean local-services test test-ci clean docker-clean package publish
+.PHONY: help go-get npm-install html-clean local-services test test-ci clean docker-clean npm-clean package publish
 
 LAMBDA_BUCKET ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR   ?= "$(shell pwd)"
 SERVICE_NAME  ?= "rehydration-service"
 LAMBDA_BIN ?= $(WORKING_DIR)/lambda/bin
 SERVICE_PACKAGE_NAME ?= "rehydration-service-${IMAGE_TAG}.zip"
+EXPIRATION_PACKAGE_NAME ?= "rehydration-expiration-${IMAGE_TAG}.zip"
 MJML_DIR = message-templates/mjml
 MJML_SRCS = $(wildcard $(MJML_DIR)/*.mjml)
 HTML_DIR = rehydrate/shared/notification/html
@@ -36,6 +37,9 @@ tidy:
 npm-install:
 	npm install
 
+npm-clean:
+	rm -fr node_modules
+
 $(HTML_DIR)/%.html: $(MJML_DIR)/%.mjml
 	./node_modules/mjml/bin/mjml $< -o $@
 
@@ -59,7 +63,7 @@ test-ci: docker-clean
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
 
-clean: docker-clean html-clean
+clean: docker-clean html-clean npm-clean
 	rm -fr $(LAMBDA_BIN)
 
 # Spin down active docker containers.
@@ -80,6 +84,15 @@ package:
 			zip -r $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) .
 	@echo ""
 	@echo "***********************"
+	@echo "*   Building Expiration lambda   *"
+	@echo "***********************"
+	@echo ""
+	cd $(WORKING_DIR)/lambda/expiration; \
+  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/expiration/bootstrap; \
+		cd $(LAMBDA_BIN)/expiration/ ; \
+			zip -r $(LAMBDA_BIN)/expiration/$(EXPIRATION_PACKAGE_NAME) .
+	@echo ""
+	@echo "***********************"
 	@echo "*   Building Fargate   *"
 	@echo "***********************"
 	@echo ""
@@ -94,6 +107,13 @@ publish: package
 	@echo ""
 	aws s3 cp $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/service/
 	rm -rf $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME)
+	@echo ""
+	@echo "*************************"
+	@echo "*   Publishing Expiration lambda   *"
+	@echo "*************************"
+	@echo ""
+	aws s3 cp $(LAMBDA_BIN)/expiration/$(EXPIRATION_PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/expiration/
+	rm -rf $(LAMBDA_BIN)/expiration/$(EXPIRATION_PACKAGE_NAME)
 	@echo ""
 	@echo "***********************"
 	@echo "*   Publishing Fargate   *"

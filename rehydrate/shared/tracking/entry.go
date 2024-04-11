@@ -35,8 +35,8 @@ func RehydrationStatusFromString(s string) (RehydrationStatus, error) {
 	}
 }
 
-// IDAttrName and other attribute name constants below should match the values in the dynamodbav struct tags in Entry,
-// DatasetVersionIndex, and ExpirationIndex structs.
+// IDAttrName and other attribute name constants below should match the values in the dynamodbav struct tags in the Entry,
+// and DatasetVersionIndex structs.
 const IDAttrName = "id"
 const DatasetVersionAttrName = "datasetVersion"
 const UserNameAttrName = "userName"

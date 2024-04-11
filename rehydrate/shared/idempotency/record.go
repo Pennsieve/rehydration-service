@@ -33,7 +33,7 @@ func StatusFromString(s string) (Status, error) {
 // KeyAttrName is the name of the idempotency key attribute in the DynamoDB item representing a Record.
 // Must match the struct tag for Record.ID, but there does not seem to be an easy way to enforce this.
 const KeyAttrName = "id"
-const RehydrationLocationAttrName = "RehydrationLocation"
+const RehydrationLocationAttrName = "rehydrationLocation"
 const StatusAttrName = "status"
 const TaskARNAttrName = "fargateTaskARN"
 const ExpirationDateAttrName = "expirationDate"
@@ -42,7 +42,7 @@ const ExpirationIndexName = "ExpirationIndex"
 
 type ExpirationIndex struct {
 	ID                  string `dynamodbav:"id"`
-	RehydrationLocation string `dynamodbav:"RehydrationLocation,omitempty"`
+	RehydrationLocation string `dynamodbav:"rehydrationLocation,omitempty"`
 	Status              Status `dynamodbav:"status"`
 	// ExpirationDate is a pointer because omitempty does not work with time.Time:
 	// https://github.com/aws/aws-sdk-go/issues/2040 (issue is for the V1 SDK, but I saw the same thing with V2)

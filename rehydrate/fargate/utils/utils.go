@@ -12,11 +12,11 @@ func RehydrationLocation(destinationBucket string, datasetID, datasetVersionID i
 func DestinationKeyPrefix(datasetID, datasetVersionID int) string {
 	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)
 }
-func CreateDestinationKey(datasetId int, versionId int, filePath string) string {
+func DestinationKey(datasetId int, versionId int, filePath string) string {
 	return path.Join(DestinationKeyPrefix(datasetId, versionId), filePath)
 }
 
-func CreateVersionedCopySource(uri string, version string) (string, error) {
+func VersionedCopySource(uri string, version string) (string, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return "", fmt.Errorf("error parsing S3 URI %s: %w", uri, err)

@@ -76,7 +76,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 			source,
 			DestinationObject{
 				Bucket: dr.rehydrationBucket,
-				Key: utils.CreateDestinationKey(dr.dataset.ID,
+				Key: utils.DestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
 					j.Path),
 			}))

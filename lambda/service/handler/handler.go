@@ -3,9 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/pennsieve/rehydration-service/service/ecs"
@@ -13,6 +11,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/service/request"
 	"github.com/pennsieve/rehydration-service/shared/awsconfig"
+	"github.com/pennsieve/rehydration-service/shared/lambdautils"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/notification"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
@@ -27,18 +26,18 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	handlerConfig, err := RehydrationServiceHandlerConfigFromEnvironment()
 	if err != nil {
 		logger.Error("error getting Rehydration service configuration from environment variables", "error", err)
-		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 	taskConfig, err := models.TaskConfigFromEnvironment()
 	if err != nil {
 		logger.Error("error getting ECS task configuration from environment variables", "error", err)
-		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	awsConfig, err := AWSConfigFactory.Get(ctx)
 	if err != nil {
 		logger.Error("error getting AWS config", "error", err)
-		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	ecsHandler := ecs.NewHandler(*awsConfig, taskConfig)
@@ -48,9 +47,9 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 		logger.Error("error creating RehydrationRequest", "error", err)
 		var badRequest *request.BadRequestError
 		if errors.As(err, &badRequest) {
-			return errorResponse(http.StatusBadRequest, err, lambdaRequest)
+			return lambdautils.ErrorResponse(http.StatusBadRequest, err, lambdaRequest)
 		}
-		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	dyDBClient := dynamodb.NewFromConfig(*awsConfig)
@@ -62,7 +61,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	if err != nil {
 		rehydrationRequest.Logger.Error("error creating emailer", "error", err)
 		rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
-		return errorResponse(http.StatusInternalServerError, err, lambdaRequest)
+		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
 	}
 
 	idempotencyConfig := idempotency.Config{
@@ -85,7 +84,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 			// Maybe we should add a new status for this.
 			rehydrationRequest.WriteNewUnknownRequest(ctx, trackingStore)
 		}
-		return errorResponse(500, err, lambdaRequest)
+		return lambdautils.ErrorResponse(500, err, lambdaRequest)
 	}
 
 	completionLogAttrs := []any{slog.String("fargateTaskARN", out.TaskARN)}
@@ -102,23 +101,11 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	respBody, err := out.String()
 	if err != nil {
 		rehydrationRequest.Logger.Error("unable to marshall successful response", slog.Any("error", err))
-		return errorResponse(500, err, lambdaRequest)
+		return lambdautils.ErrorResponse(500, err, lambdaRequest)
 	}
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 202,
 		Headers:    map[string]string{"Content-Type": "application/json"},
 		Body:       respBody,
-	}, nil
-}
-
-func errorBody(err error, lambdaRequest events.APIGatewayV2HTTPRequest) string {
-	return fmt.Sprintf(`{"requestID": %q, "logStream": %q, "message": %q}`, lambdaRequest.RequestContext.RequestID, lambdacontext.LogStreamName, err)
-}
-
-func errorResponse(statusCode int, err error, lambdaRequest events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: statusCode,
-		Headers:    map[string]string{"Content-Type": "application/json"},
-		Body:       errorBody(err, lambdaRequest),
 	}, nil
 }

@@ -16,7 +16,7 @@ type SourceObject struct {
 }
 
 func NewSourceObject(datasetUri string, size int64, name string, versionId string, path string) (*SourceObject, error) {
-	copySource, err := utils.CreateVersionedCopySource(datasetUri, versionId)
+	copySource, err := utils.VersionedCopySource(datasetUri, versionId)
 	if err != nil {
 		return nil, err
 	}

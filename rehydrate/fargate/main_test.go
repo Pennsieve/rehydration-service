@@ -150,7 +150,7 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			require.NoError(t, RehydrationTaskHandler(ctx, trackHandler))
 			afterTask := time.Now()
 			for _, datasetFile := range testDatasetFiles.Files {
-				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
+				expectedRehydratedKey := utils.DestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(taskEnv.RehydrationBucket, expectedRehydratedKey, datasetFile.Size)
 			}
 			idempotencyItems := dyDB.Scan(ctx, taskEnv.IdempotencyTable)

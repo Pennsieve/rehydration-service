@@ -12,16 +12,20 @@ done
 root_dir=$(pwd)
 
 exit_status=0
+cd "$root_dir/rehydrate/shared"
+echo "RUNNING rehydrate/shared TESTS"
+go test -v ./...; exit_status=$((exit_status || $? ))
+
 echo "RUNNING lambda/service TESTS"
 cd "$root_dir/lambda/service"
 go test -v ./...; exit_status=$((exit_status || $? ))
 
-echo "RUNNING rehydrate/fargate TESTS"
-cd "$root_dir/rehydrate/fargate"
+echo "RUNNING lambda/expiration TESTS"
+cd "$root_dir/lambda/expiration"
 go test -v ./...; exit_status=$((exit_status || $? ))
 
-cd "$root_dir/rehydrate/shared"
-echo "RUNNING rehydrate/shared TESTS"
+echo "RUNNING rehydrate/fargate TESTS"
+cd "$root_dir/rehydrate/fargate"
 go test -v ./...; exit_status=$((exit_status || $? ))
 
 exit $exit_status

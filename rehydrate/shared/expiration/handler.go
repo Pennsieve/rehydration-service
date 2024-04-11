@@ -18,6 +18,14 @@ type Handler struct {
 	logger           *slog.Logger
 }
 
+func NewHandler(store idempotency.Store, cleaner s3cleaner.Cleaner, logger *slog.Logger) *Handler {
+	return &Handler{
+		idempotencyStore: store,
+		cleaner:          cleaner,
+		logger:           logger,
+	}
+}
+
 func (h *Handler) Handle(ctx context.Context) error {
 	now := time.Now()
 	h.logger.Info("starting expiration check", slog.Time("time", now))
@@ -43,6 +51,11 @@ func (h *Handler) Handle(ctx context.Context) error {
 }
 
 func (h *Handler) expireByIndex(ctx context.Context, logger *slog.Logger, expirationIndex idempotency.ExpirationIndex) (errs []error) {
+	parsed, err := parseRehydrationLocation(expirationIndex.RehydrationLocation)
+	if err != nil {
+		errs = append(errs, err)
+		return
+	}
 	logger.Info("expiring idempotency record",
 		slog.Time("expirationDate", *expirationIndex.ExpirationDate))
 	record, err := h.idempotencyStore.ExpireByIndex(ctx, expirationIndex)
@@ -50,11 +63,7 @@ func (h *Handler) expireByIndex(ctx context.Context, logger *slog.Logger, expira
 		errs = append(errs, fmt.Errorf("error expiring idempotency record %s: %w", expirationIndex.ID, err))
 		return
 	}
-	parsed, err := parseRehydrationLocation(expirationIndex.RehydrationLocation)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("error cleaning rehydration location %s: %w", expirationIndex.RehydrationLocation, err))
-		return
-	}
+
 	logger.Info("deleting files for idempotency record")
 	resp, err := h.cleaner.Clean(ctx, parsed.bucket, parsed.prefix)
 	if err != nil {

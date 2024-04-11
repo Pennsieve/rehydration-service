@@ -22,12 +22,16 @@ go-get:
 		go get github.com/pennsieve/rehydration-service/service
 	cd $(WORKING_DIR)/rehydrate/fargate; \
 		go get github.com/pennsieve/rehydration-service/fargate
+	cd $(WORKING_DIR)/lambda/expiration; \
+        go get github.com/pennsieve/rehydration-service/expiration
 
 # Run go mod tidy on modules
 tidy:
 	cd ${WORKING_DIR}/lambda/service; go mod tidy
 	cd ${WORKING_DIR}/rehydrate/fargate; go mod tidy
 	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
+	cd ${WORKING_DIR}/lambda/expiration; go mod tidy
+
 
 npm-install:
 	npm install

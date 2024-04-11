@@ -66,13 +66,13 @@ func TestRehydrate(t *testing.T) {
 				if assert.NotNil(t, fileResult.Rehydration) {
 					sourcePath := fileResult.Rehydration.Src.GetPath()
 					require.Contains(t, testDatasetFiles.ByPath, sourcePath)
-					expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, sourcePath)
+					expectedRehydratedKey := utils.DestinationKey(dataset.ID, dataset.VersionID, sourcePath)
 					assert.Equal(t, expectedRehydratedKey, fileResult.Rehydration.Dest.GetKey())
 				}
 			}
 
 			for _, datasetFile := range testDatasetFiles.Files {
-				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
+				expectedRehydratedKey := utils.DestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(taskEnv.RehydrationBucket, expectedRehydratedKey, datasetFile.Size)
 			}
 		})

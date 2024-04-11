@@ -37,3 +37,38 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
     }
   }
 }
+
+resource "aws_lambda_function" "expiration_lambda" {
+  description   = "A function to run periodically to search for Rehydrations that should be expired and deleted"
+  function_name = "${var.environment_name}-rehydration-expiration-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  handler       = "bootstrap"
+  runtime       = "provided.al2"
+  architectures = ["arm64"]
+  role          = aws_iam_role.expiration_lambda_role.arn
+  timeout       = 300
+  memory_size   = 128
+  s3_bucket     = var.lambda_bucket
+  s3_key        = "${var.service_name}/expiration/rehydration-expiration-${var.image_tag}.zip"
+
+  vpc_config {
+    subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
+    security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.upload_v2_security_group_id]
+  }
+
+  environment {
+    variables = {
+      ENV                                    = var.environment_name
+      PENNSIEVE_DOMAIN                       = data.terraform_remote_state.account.outputs.domain_name,
+      REGION                                 = var.aws_region,
+      FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME = aws_dynamodb_table.idempotency_table.name,
+    }
+  }
+}
+
+resource "aws_lambda_permission" "expiration_rule_permission" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.expiration_lambda.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.expiration_cloudwatch_event_rule.arn
+}

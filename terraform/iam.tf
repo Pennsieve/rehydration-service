@@ -260,7 +260,103 @@ data "aws_iam_policy_document" "rehydration_iam_policy_document" {
   }
 }
 
-# Create Rehydration S3 Bucket Policy
+# EXPIRATION LAMBDA #
+#####################
+resource "aws_iam_role" "expiration_lambda_role" {
+  name = "${var.environment_name}-rehydration-expiration-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": "RehydrationExpirationLambdaAssumeRole"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role_policy_attachment" "expiration_lambda_iam_policy_attachment" {
+  role       = aws_iam_role.expiration_lambda_role.name
+  policy_arn = aws_iam_policy.expiration_lambda_iam_policy.arn
+}
+
+resource "aws_iam_policy" "expiration_lambda_iam_policy" {
+  name   = "${var.environment_name}-rehydration-expiration-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  path   = "/"
+  policy = data.aws_iam_policy_document.expiration_iam_policy_document.json
+}
+
+data "aws_iam_policy_document" "expiration_iam_policy_document" {
+
+  statement {
+    sid     = "ExpirationLambdaLogsPermissions"
+    effect  = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutDestination",
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "ExpirationLambdaEC2Permissions"
+    effect  = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ExpirationLambdaDynamoDBPermissions"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+    ]
+
+    resources = [
+      aws_dynamodb_table.idempotency_table.arn,
+      "${aws_dynamodb_table.idempotency_table.arn}/*",
+    ]
+
+  }
+
+  statement {
+    sid    = "ExpirationLambdaS3RehydrationBuckets"
+    effect = "Allow"
+
+    actions = [
+      "s3:DeleteObject",
+      "s3:ListBucket",
+    ]
+
+    resources = [
+      aws_s3_bucket.rehydration_s3_bucket.arn,
+      "${aws_s3_bucket.rehydration_s3_bucket.arn}/*",
+    ]
+  }
+
+}
+
+# Create Rehydration S3 Bucket Policy #
+#######################################
 data "aws_iam_policy_document" "rehydration_bucket_iam_policy_document" {
 
   statement {

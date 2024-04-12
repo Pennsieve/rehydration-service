@@ -52,7 +52,7 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     effect = "Allow"
 
     actions = [
-      "s3:GetObject",
+      "s3:Get*",
     ]
 
     resources = [

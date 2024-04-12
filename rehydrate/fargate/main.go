@@ -41,7 +41,7 @@ func main() {
 
 	taskConfig.Logger.Info("starting rehydration task")
 	if err := RehydrationTaskHandler(ctx, taskHandler); err != nil {
-		taskConfig.Logger.Error("error rehydrating dataset: %v", err)
+		taskConfig.Logger.Error("error rehydrating dataset", slog.Any("error", err))
 		os.Exit(1)
 	}
 	taskConfig.Logger.Info("rehydration complete")

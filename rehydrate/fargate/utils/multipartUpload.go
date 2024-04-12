@@ -67,7 +67,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 	go aggregateResult(done, &parts, results)
 
 	// Wait until all processors are completed.
-	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results, logger)
+	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results, logger, destBucket, destKey)
 
 	// Wait until done channel has a value
 	<-done
@@ -136,7 +136,7 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 
 // createWorkerPool creates a worker pool for uploading parts
 func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, uploadId string,
-	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart, logger *slog.Logger) {
+	partWalker chan s3.UploadPartCopyInput, results chan s3types.CompletedPart, logger *slog.Logger, destBucket, destKey string) {
 
 	defer func() {
 		close(results)
@@ -165,6 +165,8 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 	if workerFailed {
 		logger.Info("attempting to abort upload")
 		abortIn := s3.AbortMultipartUploadInput{
+			Bucket:       aws.String(destBucket),
+			Key:          aws.String(destKey),
 			UploadId:     aws.String(uploadId),
 			RequestPayer: s3types.RequestPayerRequester,
 		}

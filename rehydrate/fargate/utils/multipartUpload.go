@@ -20,6 +20,9 @@ import (
 // this corresponds with max file size of 500GB per file as copy can do max 10,000 parts.
 const maxPartSize = 50 * 1024 * 1024
 
+// chunkSize is the number of bytes in a copy part. It is a variable to allow for testing with smaller files.
+var chunkSize int64 = maxPartSize
+
 // nrCopyWorkers number of threads for multipart uploader
 const nrCopyWorkers = 10
 
@@ -102,7 +105,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 // buildCopySourceRange helper function to build the string for the range of bits to copy
 func buildCopySourceRange(start int64, objectSize int64) string {
-	end := start + maxPartSize - 1
+	end := start + chunkSize - 1
 	if end > objectSize {
 		end = objectSize - 1
 	}
@@ -119,14 +122,14 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 
 	var i int64
 	var partNumber int32 = 1
-	for i = 0; i < fileSize; i += maxPartSize {
+	for i = 0; i < fileSize; i += chunkSize {
 		copySourceRange := buildCopySourceRange(i, fileSize)
 		partWalker <- s3.UploadPartCopyInput{
 			Bucket:          &destBucket,
 			CopySource:      &copySource,
 			CopySourceRange: &copySourceRange,
 			Key:             &destKey,
-			PartNumber:      &partNumber,
+			PartNumber:      aws.Int32(partNumber),
 			UploadId:        &uploadId,
 			RequestPayer:    s3types.RequestPayerRequester,
 		}

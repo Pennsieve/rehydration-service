@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -39,8 +38,8 @@ func MultiPartCopy(ctx context.Context, svc *s3.Client, fileSize int64, copySour
 
 	//struct for starting a multipart upload
 	startInput := s3.CreateMultipartUploadInput{
-		Bucket:       &destBucket,
-		Key:          &destKey,
+		Bucket:       aws.String(destBucket),
+		Key:          aws.String(destKey),
 		RequestPayer: s3types.RequestPayerRequester,
 	}
 
@@ -81,16 +80,16 @@ func MultiPartCopy(ctx context.Context, svc *s3.Client, fileSize int64, copySour
 	})
 
 	//create struct for completing the upload
-	mpu := s3types.CompletedMultipartUpload{
+	mpu := &s3types.CompletedMultipartUpload{
 		Parts: parts,
 	}
 
 	//complete actual upload
 	complete := s3.CompleteMultipartUploadInput{
-		Bucket:          &destBucket,
-		Key:             &destKey,
-		UploadId:        &uploadId,
-		MultipartUpload: &mpu,
+		Bucket:          aws.String(destBucket),
+		Key:             aws.String(destKey),
+		UploadId:        aws.String(uploadId),
+		MultipartUpload: mpu,
 		RequestPayer:    s3types.RequestPayerRequester,
 	}
 	compOutput, err := svc.CompleteMultipartUpload(childCtx, &complete)
@@ -125,12 +124,12 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 	for i = 0; i < fileSize; i += partSize {
 		copySourceRange := buildCopySourceRange(i, fileSize)
 		partWalker <- s3.UploadPartCopyInput{
-			Bucket:          &destBucket,
-			CopySource:      &copySource,
-			CopySourceRange: &copySourceRange,
-			Key:             &destKey,
+			Bucket:          aws.String(destBucket),
+			CopySource:      aws.String(copySource),
+			CopySourceRange: aws.String(copySourceRange),
+			Key:             aws.String(destKey),
 			PartNumber:      aws.Int32(partNumber),
-			UploadId:        &uploadId,
+			UploadId:        aws.String(uploadId),
 			RequestPayer:    s3types.RequestPayerRequester,
 		}
 		partNumber++
@@ -216,9 +215,9 @@ func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId in
 		//copy etag and part number from response as it is needed for completion
 		if partResp != nil {
 			partNum := partInput.PartNumber
-			etag := strings.Trim(*partResp.CopyPartResult.ETag, "\"")
+			etag := partResp.CopyPartResult.ETag
 			cPart := s3types.CompletedPart{
-				ETag:       &etag,
+				ETag:       etag,
 				PartNumber: partNum,
 			}
 

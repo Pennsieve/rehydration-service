@@ -64,3 +64,15 @@ resource "aws_s3_bucket_logging" "rehydration_s3_logging" {
   target_bucket = data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_logs_s3_bucket_id
   target_prefix = local.rehydration_logs_target_prefix
 }
+
+resource "aws_s3_bucket_lifecycle_configuration" "rehydration_bucket_lifecycle" {
+  bucket = aws_s3_bucket.rehydration_s3_bucket.id
+
+  rule {
+    id = "DeleteUncompletedMultipartCopies"
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 14
+    }
+    status = "Enabled"
+  }
+}

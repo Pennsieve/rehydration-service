@@ -386,7 +386,7 @@ func TestDyDBStore_ExpireByIndex_ConditionCheckFailure(t *testing.T) {
 	if assert.ErrorAs(t, err, &conditionCheckError) {
 		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.Status)
 		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.ID)
-		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.ExpirationDate.Format(time.RFC3339Nano))
+		assert.Contains(t, conditionCheckError.Error(), outdatedIndex.ExpirationDate.String())
 		assert.Contains(t, conditionCheckError.Error(), record.ExpirationDate.Format(time.RFC3339Nano))
 	}
 

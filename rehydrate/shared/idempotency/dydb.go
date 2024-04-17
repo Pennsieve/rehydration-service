@@ -59,17 +59,17 @@ func (s *DyDBStore) PutRecord(ctx context.Context, record Record) error {
 	if err != nil {
 		return err
 	}
-	putConditionBuilder := expression.Name(KeyAttrName).AttributeNotExists()
-	putExpression, err := expression.NewBuilder().WithCondition(putConditionBuilder).Build()
+	conditionBuilder := expression.AttributeNotExists(expression.Name(KeyAttrName))
+	putRecordExpression, err := expression.NewBuilder().WithCondition(conditionBuilder).Build()
 	if err != nil {
 		return fmt.Errorf("error building PutRecord expression: %w", err)
 	}
 	in := dynamodb.PutItemInput{
 		Item:                                item,
 		TableName:                           aws.String(s.table),
-		ExpressionAttributeNames:            putExpression.Names(),
-		ExpressionAttributeValues:           putExpression.Values(),
-		ConditionExpression:                 putExpression.Condition(),
+		ExpressionAttributeNames:            putRecordExpression.Names(),
+		ExpressionAttributeValues:           putRecordExpression.Values(),
+		ConditionExpression:                 putRecordExpression.Condition(),
 		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
 	}
 	if _, err = s.client.PutItem(ctx, &in); err == nil {
@@ -89,7 +89,7 @@ func (s *DyDBStore) PutRecord(ctx context.Context, record Record) error {
 }
 
 func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
-	updateExpressionBuilder := expression.Set(
+	updateBuilder := expression.Set(
 		expression.Name(RehydrationLocationAttrName),
 		expression.Value(record.RehydrationLocation),
 	).Set(
@@ -98,16 +98,16 @@ func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
 	).Set(
 		expression.Name(ExpirationDateAttrName),
 		expression.Value(record.ExpirationDate))
-	updateExpression, err := expression.NewBuilder().WithUpdate(updateExpressionBuilder).Build()
+	updateRecordExpression, err := expression.NewBuilder().WithUpdate(updateBuilder).Build()
 	if err != nil {
 		return fmt.Errorf("error building UpdateRecord expression: %w", err)
 	}
 	in := &dynamodb.UpdateItemInput{
 		Key:                       itemKeyFromRecordID(record.ID),
 		TableName:                 aws.String(s.table),
-		ExpressionAttributeNames:  updateExpression.Names(),
-		ExpressionAttributeValues: updateExpression.Values(),
-		UpdateExpression:          updateExpression.Update(),
+		ExpressionAttributeNames:  updateRecordExpression.Names(),
+		ExpressionAttributeValues: updateRecordExpression.Values(),
+		UpdateExpression:          updateRecordExpression.Update(),
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
 		return fmt.Errorf("error updating record %s: %w", record.ID, err)
@@ -116,17 +116,17 @@ func (s *DyDBStore) UpdateRecord(ctx context.Context, record Record) error {
 }
 
 func (s *DyDBStore) SetTaskARN(ctx context.Context, recordID string, taskARN string) error {
-	updateExpressionBuilder := expression.Set(expression.Name(TaskARNAttrName), expression.Value(taskARN))
-	updateExpression, err := expression.NewBuilder().WithUpdate(updateExpressionBuilder).Build()
+	updateBuilder := expression.Set(expression.Name(TaskARNAttrName), expression.Value(taskARN))
+	setTaskARNExpression, err := expression.NewBuilder().WithUpdate(updateBuilder).Build()
 	if err != nil {
 		return fmt.Errorf("error building SetTaskARN expression: %w", err)
 	}
 	in := &dynamodb.UpdateItemInput{
 		Key:                       itemKeyFromRecordID(recordID),
 		TableName:                 aws.String(s.table),
-		ExpressionAttributeNames:  updateExpression.Names(),
-		ExpressionAttributeValues: updateExpression.Values(),
-		UpdateExpression:          updateExpression.Update(),
+		ExpressionAttributeNames:  setTaskARNExpression.Names(),
+		ExpressionAttributeValues: setTaskARNExpression.Values(),
+		UpdateExpression:          setTaskARNExpression.Update(),
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
 		return fmt.Errorf("error setting task ARN %s on record %s: %w", taskARN, recordID, err)
@@ -146,11 +146,11 @@ func (s *DyDBStore) DeleteRecord(ctx context.Context, recordID string) error {
 }
 
 func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
-	updateExpressionBuilder := expression.Set(expression.Name(StatusAttrName), expression.Value(Expired))
-	conditionExpressionBuilder := expression.AttributeExists(expression.Name(KeyAttrName))
-	updateExpression, err := expression.NewBuilder().
-		WithUpdate(updateExpressionBuilder).
-		WithCondition(conditionExpressionBuilder).
+	updateBuilder := expression.Set(expression.Name(StatusAttrName), expression.Value(Expired))
+	conditionBuilder := expression.AttributeExists(expression.Name(KeyAttrName))
+	expireRecordExpression, err := expression.NewBuilder().
+		WithUpdate(updateBuilder).
+		WithCondition(conditionBuilder).
 		Build()
 	if err != nil {
 		return fmt.Errorf("error building ExpireRecord expression: %w", err)
@@ -159,10 +159,10 @@ func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
 	in := &dynamodb.UpdateItemInput{
 		Key:                       itemKeyFromRecordID(recordID),
 		TableName:                 aws.String(s.table),
-		ExpressionAttributeNames:  updateExpression.Names(),
-		ExpressionAttributeValues: updateExpression.Values(),
-		UpdateExpression:          updateExpression.Update(),
-		ConditionExpression:       updateExpression.Condition(),
+		ExpressionAttributeNames:  expireRecordExpression.Names(),
+		ExpressionAttributeValues: expireRecordExpression.Values(),
+		UpdateExpression:          expireRecordExpression.Update(),
+		ConditionExpression:       expireRecordExpression.Condition(),
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
 		var conditionFailedError *types.ConditionalCheckFailedException

@@ -32,6 +32,8 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 	With("CLUSTER_ARN", "test-cluster-arn").
 	With("SECURITY_GROUP", "test-sg").
 	With("TASK_DEF_CONTAINER_NAME", "test-rehydrate-fargate-container").
+	With(sharedidempotency.TableNameKey, "TestRehydrationIdempotency").
+	With(tracking.TableNameKey, "TestRehydrationTracking").
 	With(notification.PennsieveDomainKey, "pennsieve.example.com").
 	With(shared.AWSRegionKey, "test-1").
 	With(expiration.RehydrationTTLDays, "14")

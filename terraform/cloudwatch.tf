@@ -50,7 +50,7 @@ resource "aws_cloudwatch_log_subscription_filter" "expiration_lambda_datadog_sub
 resource "aws_cloudwatch_event_rule" "expiration_cloudwatch_event_rule" {
   name                = "${var.environment_name}-rehydration-expiration-cloudwatch-event-rule-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   description         = "Daily trigger for rehydration expiration"
-  schedule_expression = "cron(0 4 * * * *)"
+  schedule_expression = "cron(0 4 * * ? *)"
 }
 
 resource "aws_cloudwatch_event_target" "expiration_cloudwatch_event_target" {

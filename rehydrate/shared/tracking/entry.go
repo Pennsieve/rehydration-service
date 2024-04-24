@@ -2,8 +2,8 @@ package tracking
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/rehydration-service/shared/dydbutils"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"strings"
 	"time"
@@ -35,8 +35,8 @@ func RehydrationStatusFromString(s string) (RehydrationStatus, error) {
 	}
 }
 
-// IDAttrName and other attribute name constants below should match the values in the dynamodbav struct tags in Entry
-// and DatasetVersion structs.
+// IDAttrName and other attribute name constants below should match the values in the dynamodbav struct tags in the Entry,
+// and DatasetVersionIndex structs.
 const IDAttrName = "id"
 const DatasetVersionAttrName = "datasetVersion"
 const UserNameAttrName = "userName"
@@ -63,7 +63,7 @@ type DatasetVersionIndex struct {
 	// EmailSentDate is a pointer because omitempty does not work with time.Time:
 	// https://github.com/aws/aws-sdk-go/issues/2040 (issue is for the V1 SDK, but I saw the same thing with V2)
 	// This is the cleanest way to ensure that entries that haven't had their email sent date result in table items
-	// with no email sent date field attribure instead of having the attribute set to the time.Time zero value 0001-01-01T00:00:00Z
+	// with no email sent date field attribute instead of having the attribute set to the time.Time zero value 0001-01-01T00:00:00Z
 	EmailSentDate *time.Time `dynamodbav:"emailSentDate,omitempty"`
 }
 type Entry struct {
@@ -92,34 +92,13 @@ func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStre
 }
 
 func (r *Entry) Item() (map[string]types.AttributeValue, error) {
-	item, err := attributevalue.MarshalMap(r)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling Entry %+v to DynamoDB item: %w", r, err)
-
-	}
-	return item, nil
+	return dydbutils.ItemImpl(r)
 }
 
-func FromItem(item map[string]types.AttributeValue) (*Entry, error) {
-	var entry Entry
-	if err := attributevalue.UnmarshalMap(item, &entry); err != nil {
-		return nil, fmt.Errorf("error unmarshalling item to Entry: %w", err)
-	}
-	return &entry, nil
-}
+var FromItem = dydbutils.FromItem[Entry]
 
-func DatasetVersionIndexFromItem(item map[string]types.AttributeValue) (*DatasetVersionIndex, error) {
-	var index DatasetVersionIndex
-	if err := attributevalue.UnmarshalMap(item, &index); err != nil {
-		return nil, fmt.Errorf("error unmarshalling item to DatasetVersionIndex: %w", err)
-	}
-	return &index, nil
-}
+var DatasetVersionIndexFromItem = dydbutils.FromItem[DatasetVersionIndex]
 
 func entryItemKeyFromID(id string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{IDAttrName: stringAttributeValue(id)}
-}
-
-func stringAttributeValue(attributeValue string) types.AttributeValue {
-	return &types.AttributeValueMemberS{Value: attributeValue}
+	return map[string]types.AttributeValue{IDAttrName: dydbutils.StringAttributeValue(id)}
 }

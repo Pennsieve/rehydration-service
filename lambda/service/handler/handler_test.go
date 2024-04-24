@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/rehydration-service/service/handler"
 	"github.com/pennsieve/rehydration-service/service/models"
 	"github.com/pennsieve/rehydration-service/shared"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	sharedidempotency "github.com/pennsieve/rehydration-service/shared/idempotency"
 	sharedmodels "github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/notification"
@@ -31,8 +32,11 @@ var rehydrationServiceHandlerEnv = test.NewEnvironmentVariables().
 	With("CLUSTER_ARN", "test-cluster-arn").
 	With("SECURITY_GROUP", "test-sg").
 	With("TASK_DEF_CONTAINER_NAME", "test-rehydrate-fargate-container").
+	With(sharedidempotency.TableNameKey, "TestRehydrationIdempotency").
+	With(tracking.TableNameKey, "TestRehydrationTracking").
 	With(notification.PennsieveDomainKey, "pennsieve.example.com").
-	With(shared.AWSRegionKey, "test-1")
+	With(shared.AWSRegionKey, "test-1").
+	With(expiration.RehydrationTTLDays, "14")
 
 func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
@@ -65,6 +69,7 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	assert.Equal(t, sharedidempotency.InProgress, record.Status)
 	assert.Empty(t, record.RehydrationLocation)
 	assert.Equal(t, expectedTaskARN, record.FargateTaskARN)
+	assert.Nil(t, record.ExpirationDate)
 
 	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
 	require.Len(t, trackingItems, 1)
@@ -88,11 +93,11 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 
 	dataset := sharedmodels.Dataset{ID: 5065, VersionID: 2}
 	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
-	inProgress := sharedidempotency.Record{
-		ID:             sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
-		Status:         sharedidempotency.InProgress,
-		FargateTaskARN: "arn:aws:ecs:test:test:test:test",
-	}
+	inProgress := sharedidempotency.NewRecord(
+		sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		sharedidempotency.InProgress).
+		WithFargateTaskARN("arn:aws:ecs:test:test:test:test")
+
 	existingInProgressTracking := tracking.NewEntry(
 		uuid.NewString(),
 		dataset,
@@ -101,7 +106,7 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 		uuid.NewString(),
 		inProgress.FargateTaskARN)
 	fixture := NewFixtureBuilder(t).
-		withIdempotencyTable(inProgress).
+		withIdempotencyTable(*inProgress).
 		withTrackingTable(*existingInProgressTracking).
 		build()
 	defer fixture.teardown()
@@ -125,7 +130,7 @@ func TestRehydrationServiceHandler_InProgress(t *testing.T) {
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
-	assert.Equal(t, inProgress, *record)
+	assert.Equal(t, inProgress, record)
 
 	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
 	assert.Len(t, trackingItems, 2)
@@ -157,14 +162,13 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	user := sharedmodels.User{Name: "First Last", Email: "last@example.com"}
 
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
-	expired := sharedidempotency.Record{
-		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              sharedidempotency.Expired,
-		FargateTaskARN:      expectedTaskARN,
-	}
+	expired := sharedidempotency.NewRecord(
+		sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		sharedidempotency.Expired).
+		WithRehydrationLocation(fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID))).
+		WithFargateTaskARN(expectedTaskARN)
 	fixture := NewFixtureBuilder(t).
-		withIdempotencyTable(expired).
+		withIdempotencyTable(*expired).
 		withTrackingTable().
 		build()
 	defer fixture.teardown()
@@ -189,7 +193,7 @@ func TestRehydrationServiceHandler_Expired(t *testing.T) {
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
-	assert.Equal(t, expired, *record)
+	assert.Equal(t, expired, record)
 
 	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
 	require.Len(t, trackingItems, 1)
@@ -217,19 +221,20 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 		Dataset: dataset,
 		User:    user,
 	}
+	completedExpirationDate := time.Now().Add(-time.Hour * time.Duration(24*2))
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
-	completed := sharedidempotency.Record{
-		ID:                  sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
-		RehydrationLocation: fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID)),
-		Status:              sharedidempotency.Completed,
-		FargateTaskARN:      expectedTaskARN,
-	}
+	completed := sharedidempotency.NewRecord(
+		sharedidempotency.RecordID(dataset.ID, dataset.VersionID),
+		sharedidempotency.Completed).
+		WithRehydrationLocation(fmt.Sprintf("some/location/%s", sharedidempotency.RecordID(dataset.ID, dataset.VersionID))).
+		WithFargateTaskARN(expectedTaskARN).
+		WithExpirationDate(&completedExpirationDate)
 	// Ideally we would add a test.RequestAssertionFunc for the mock SES server here to test that we are sending
 	// the correct input to SES. But it looks like the AWS client transforms the SendEmail input to a string
 	// that is hard to decode before sending that string to the mock server. So hard to write assertions for it.
 	fixture := NewFixtureBuilder(t).
 		withExpectedMessageID(uuid.NewString()).
-		withIdempotencyTable(completed).
+		withIdempotencyTable(*completed).
 		withTrackingTable().
 		build()
 	defer fixture.teardown()
@@ -251,7 +256,11 @@ func TestRehydrationServiceHandler_Completed(t *testing.T) {
 	require.Len(t, scanned, 1)
 	record, err := sharedidempotency.FromItem(scanned[0])
 	require.NoError(t, err)
-	assert.Equal(t, completed, *record)
+	assert.Equal(t, completed.ID, record.ID)
+	assert.Equal(t, completed.Status, record.Status)
+	assert.Equal(t, completed.RehydrationLocation, record.RehydrationLocation)
+	assert.Equal(t, completed.FargateTaskARN, record.FargateTaskARN)
+	assert.True(t, completed.ExpirationDate.Before(*record.ExpirationDate))
 
 	trackingItems := fixture.dyDB.Scan(ctx, fixture.trackingTable)
 	require.Len(t, trackingItems, 1)
@@ -503,7 +512,7 @@ func (b *FixtureBuilder) withIdempotencyTable(records ...sharedidempotency.Recor
 		assert.FailNow(b.testingT, "idempotency table name missing from environment variables or empty", "env var name: %s", sharedidempotency.TableNameKey)
 	}
 	b.idempotencyTableName = table
-	b.createTableInputs = append(b.createTableInputs, test.IdempotencyCreateTableInput(table, sharedidempotency.KeyAttrName))
+	b.createTableInputs = append(b.createTableInputs, test.IdempotencyCreateTableInput(table))
 	for i := range records {
 		record := &records[i]
 		b.putItemInputs = append(b.putItemInputs, test.ItemersToPutItemInputs(b.testingT, b.idempotencyTableName, record)...)

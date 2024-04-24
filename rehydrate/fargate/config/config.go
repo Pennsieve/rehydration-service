@@ -11,10 +11,12 @@ import (
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared"
 	"github.com/pennsieve/rehydration-service/shared/awsclient"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/models"
 	"github.com/pennsieve/rehydration-service/shared/notification"
+	"github.com/pennsieve/rehydration-service/shared/s3cleaner"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"strconv"
@@ -28,6 +30,7 @@ type Config struct {
 	objectProcessor    objects.Processor
 	trackingStore      tracking.Store
 	emailer            notification.Emailer
+	cleaner            s3cleaner.Cleaner
 	s3ClientSupplier   *awsclient.Supplier[s3.Client, s3.Options]
 	dyDBClientSupplier *awsclient.Supplier[dynamodb.Client, dynamodb.Options]
 	sesClientSupplier  *awsclient.Supplier[ses.Client, ses.Options]
@@ -108,16 +111,33 @@ func (c *Config) SetEmailer(emailer notification.Emailer) {
 	c.emailer = emailer
 }
 
+func (c *Config) Cleaner() (s3cleaner.Cleaner, error) {
+	if c.cleaner == nil {
+		cleaner, err := s3cleaner.NewCleaner(c.s3ClientSupplier.Get(), s3cleaner.MaxCleanBatch)
+		if err != nil {
+			return nil, err
+		}
+		c.cleaner = cleaner
+	}
+	return c.cleaner, nil
+}
+
+// SetCleaner is for use in tests that would like to override the real S3 Cleaner with a mock implementation
+func (c *Config) SetCleaner(cleaner s3cleaner.Cleaner) {
+	c.cleaner = cleaner
+}
+
 type Env struct {
-	Dataset           *models.Dataset
-	User              *models.User
-	TaskEnv           string
-	PennsieveHost     string
-	IdempotencyTable  string
-	TrackingTable     string
-	PennsieveDomain   string
-	AWSRegion         string
-	RehydrationBucket string
+	Dataset            *models.Dataset
+	User               *models.User
+	TaskEnv            string
+	PennsieveHost      string
+	IdempotencyTable   string
+	TrackingTable      string
+	PennsieveDomain    string
+	AWSRegion          string
+	RehydrationBucket  string
+	RehydrationTTLDays int
 }
 
 func LookupEnv() (*Env, error) {
@@ -146,6 +166,10 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	rehydrationTTLDays, err := shared.IntFromEnvVar(expiration.RehydrationTTLDays)
+	if err != nil {
+		return nil, err
+	}
 	dataset, err := datasetFromEnv()
 	if err != nil {
 		return nil, err
@@ -155,15 +179,16 @@ func LookupEnv() (*Env, error) {
 		return nil, err
 	}
 	return &Env{
-		Dataset:           dataset,
-		User:              user,
-		TaskEnv:           env,
-		PennsieveHost:     pennsieveHost,
-		IdempotencyTable:  idempotencyTable,
-		TrackingTable:     trackingTable,
-		PennsieveDomain:   pennsieveDomain,
-		AWSRegion:         awsRegion,
-		RehydrationBucket: rehydrationBucket,
+		Dataset:            dataset,
+		User:               user,
+		TaskEnv:            env,
+		PennsieveHost:      pennsieveHost,
+		IdempotencyTable:   idempotencyTable,
+		TrackingTable:      trackingTable,
+		PennsieveDomain:    pennsieveDomain,
+		AWSRegion:          awsRegion,
+		RehydrationBucket:  rehydrationBucket,
+		RehydrationTTLDays: rehydrationTTLDays,
 	}, nil
 }
 

@@ -66,13 +66,13 @@ func TestRehydrate(t *testing.T) {
 				if assert.NotNil(t, fileResult.Rehydration) {
 					sourcePath := fileResult.Rehydration.Src.GetPath()
 					require.Contains(t, testDatasetFiles.ByPath, sourcePath)
-					expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, sourcePath)
+					expectedRehydratedKey := utils.DestinationKey(dataset.ID, dataset.VersionID, sourcePath)
 					assert.Equal(t, expectedRehydratedKey, fileResult.Rehydration.Dest.GetKey())
 				}
 			}
 
 			for _, datasetFile := range testDatasetFiles.Files {
-				expectedRehydratedKey := utils.CreateDestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
+				expectedRehydratedKey := utils.DestinationKey(dataset.ID, dataset.VersionID, datasetFile.Path)
 				s3Fixture.AssertObjectExists(taskEnv.RehydrationBucket, expectedRehydratedKey, datasetFile.Size)
 			}
 		})
@@ -82,12 +82,12 @@ func TestRehydrate(t *testing.T) {
 func TestRehydrate_S3Errors(t *testing.T) {
 	test.SetLogLevel(t, slog.LevelError)
 	ctx := context.Background()
-	awsConfig := test.NewAWSEndpoints(t).Config(ctx, false)
+	awsConfig := test.NewAWSEndpoints(t).WithMinIO().Config(ctx, false)
 	publishBucket := "discover-bucket"
 	taskEnv := newTestConfigEnv()
 	dataset := taskEnv.Dataset
 
-	testDatasetFileCount := 1000
+	testDatasetFileCount := 101
 	testDatasetFiles := discovertest.NewTestDatasetFiles(*dataset, testDatasetFileCount).WithFakeS3VersionsIDs()
 	var copyFailPaths []string
 	for i, file := range testDatasetFiles.Files {
@@ -95,6 +95,19 @@ func TestRehydrate_S3Errors(t *testing.T) {
 		if i%10 == 0 {
 			copyFailPaths = append(copyFailPaths, file.Path)
 		}
+	}
+
+	// Set up S3 for the tests
+	s3Client := s3.NewFromConfig(awsConfig)
+	s3Fixture, putObjectOutputs := test.NewS3Fixture(t, s3Client,
+		&s3.CreateBucketInput{Bucket: aws.String(publishBucket)},
+		&s3.CreateBucketInput{Bucket: aws.String(taskEnv.RehydrationBucket)},
+	).WithVersioning(publishBucket).WithObjects(testDatasetFiles.PutObjectInputs(publishBucket)...)
+	defer s3Fixture.Teardown()
+
+	// Set S3 versionIds
+	for location, putOutput := range putObjectOutputs {
+		testDatasetFiles.SetS3VersionID(t, location, aws.ToString(putOutput.VersionId))
 	}
 
 	// Create a mock Discover API server
@@ -108,7 +121,7 @@ func TestRehydrate_S3Errors(t *testing.T) {
 	taskEnv.PennsieveHost = mockDiscover.Server.URL
 
 	taskConfig := config.NewConfig(awsConfig, taskEnv)
-	mockProcessor := NewMockFailingObjectProcessor(copyFailPaths...)
+	mockProcessor := NewMockFailingObjectProcessor(s3Client, copyFailPaths...)
 	taskConfig.SetObjectProcessor(mockProcessor)
 
 	rehydrator := NewDatasetRehydrator(taskConfig, ThresholdSize)

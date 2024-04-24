@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"log/slog"
 	"testing"
+	"time"
 )
 
 type handlerTest struct {
@@ -119,11 +120,9 @@ func TestHandler_Handle_RetryMultiple(t *testing.T) {
 	expectedTaskARN := "arn:aws:ecs:test:test:test:test"
 
 	// Fist SaveInProgress returns an error indicating that a record already exists, but does not include info about it
-	alreadyExistsError := &idempotency.RecordAlreadyExistsError{Existing: &idempotency.Record{
-		ID:                  recordID,
-		RehydrationLocation: "/some/old/location",
-		Status:              idempotency.Expired,
-	}}
+	alreadyExistsError := &idempotency.RecordAlreadyExistsError{
+		Existing: idempotency.NewRecord(recordID, idempotency.Expired).WithRehydrationLocation("/some/old/location"),
+	}
 
 	for i := 0; i <= maxRetries; i++ {
 		retryableErrorCount := i + 1
@@ -235,6 +234,34 @@ func (m *MockStore) OnDeleteRecordSucceed(recordID string) *mock.Call {
 
 func (m *MockStore) OnDeleteRecordError(recordID string, err error) *mock.Call {
 	return m.On("DeleteRecord", mock.Anything, recordID).Return(err)
+}
+
+func (m *MockStore) ExpireRecord(ctx context.Context, recordID string) error {
+	args := m.Called(ctx, recordID)
+	return args.Error(0)
+}
+
+func (m *MockStore) SetExpirationDate(ctx context.Context, recordID string, expirationDate time.Time) error {
+	args := m.Called(ctx, recordID, expirationDate)
+	return args.Error(0)
+}
+
+func (m *MockStore) OnSetExpirationDateSucceed(recordID string, expirationDate time.Time) *mock.Call {
+	return m.On("SetExpirationDate", mock.Anything, recordID, expirationDate).Return(nil)
+}
+
+func (m *MockStore) OnSetExpirationDateError(recordID string, expirationDate time.Time, err error) *mock.Call {
+	return m.On("SetExpirationDate", mock.Anything, recordID, expirationDate).Return(err)
+}
+
+func (m *MockStore) QueryExpirationIndex(ctx context.Context, now time.Time, limit int32) ([]idempotency.ExpirationIndex, error) {
+	args := m.Called(ctx, now, limit)
+	return args.Get(0).([]idempotency.ExpirationIndex), args.Error(1)
+}
+
+func (m *MockStore) ExpireByIndex(ctx context.Context, index idempotency.ExpirationIndex) (*idempotency.Record, error) {
+	args := m.Called(ctx, index)
+	return args.Get(0).(*idempotency.Record), args.Error(1)
 }
 
 type MockECSHandler struct {

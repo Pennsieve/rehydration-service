@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,33 +19,33 @@ import (
 // this corresponds with max file size of 500GB per file as copy can do max 10,000 parts.
 const maxPartSize = 50 * 1024 * 1024
 
-// chunkSize is the number of bytes in a copy part. It is a variable to allow for testing with smaller files.
-var chunkSize int64 = maxPartSize
+// partSize is the number of bytes in a copy part. It is a variable to allow for testing with smaller files.
+var partSize int64 = maxPartSize
 
 // nrCopyWorkers number of threads for multipart uploader
 const nrCopyWorkers = 10
 
 // MultiPartCopy function that starts, perform each part upload, and completes the copy
-func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string, logger *slog.Logger) error {
+func MultiPartCopy(ctx context.Context, svc *s3.Client, fileSize int64, copySource string, destBucket string, destKey string, logger *slog.Logger) error {
 
 	partWalker := make(chan s3.UploadPartCopyInput, nrCopyWorkers)
 	results := make(chan s3types.CompletedPart, nrCopyWorkers)
 
 	parts := make([]s3types.CompletedPart, 0)
 
-	ctx, cancelFn := context.WithTimeout(context.TODO(), 30*time.Minute)
+	childCtx, cancelFn := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancelFn()
 
 	//struct for starting a multipart upload
 	startInput := s3.CreateMultipartUploadInput{
-		Bucket:       &destBucket,
-		Key:          &destKey,
+		Bucket:       aws.String(destBucket),
+		Key:          aws.String(destKey),
 		RequestPayer: s3types.RequestPayerRequester,
 	}
 
 	//send command to start copy and get the upload id as it is needed later
 	var uploadId string
-	createOutput, err := svc.CreateMultipartUpload(ctx, &startInput)
+	createOutput, err := svc.CreateMultipartUpload(childCtx, &startInput)
 	if err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 	go aggregateResult(done, &parts, results)
 
 	// Wait until all processors are completed.
-	createWorkerPool(ctx, svc, nrCopyWorkers, uploadId, partWalker, results, logger, destBucket, destKey)
+	createWorkerPool(childCtx, svc, nrCopyWorkers, uploadId, partWalker, results, logger, destBucket, destKey)
 
 	// Wait until done channel has a value
 	<-done
@@ -81,19 +80,19 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 	})
 
 	//create struct for completing the upload
-	mpu := s3types.CompletedMultipartUpload{
+	mpu := &s3types.CompletedMultipartUpload{
 		Parts: parts,
 	}
 
 	//complete actual upload
 	complete := s3.CompleteMultipartUploadInput{
-		Bucket:          &destBucket,
-		Key:             &destKey,
-		UploadId:        &uploadId,
-		MultipartUpload: &mpu,
+		Bucket:          aws.String(destBucket),
+		Key:             aws.String(destKey),
+		UploadId:        aws.String(uploadId),
+		MultipartUpload: mpu,
 		RequestPayer:    s3types.RequestPayerRequester,
 	}
-	compOutput, err := svc.CompleteMultipartUpload(context.TODO(), &complete)
+	compOutput, err := svc.CompleteMultipartUpload(childCtx, &complete)
 	if err != nil {
 		return fmt.Errorf("error completing upload: %w", err)
 	}
@@ -105,7 +104,7 @@ func MultiPartCopy(svc *s3.Client, fileSize int64, copySource string, destBucket
 
 // buildCopySourceRange helper function to build the string for the range of bits to copy
 func buildCopySourceRange(start int64, objectSize int64) string {
-	end := start + chunkSize - 1
+	end := start + partSize - 1
 	if end > objectSize {
 		end = objectSize - 1
 	}
@@ -122,15 +121,15 @@ func allocate(uploadId string, fileSize int64, copySource string, destBucket str
 
 	var i int64
 	var partNumber int32 = 1
-	for i = 0; i < fileSize; i += chunkSize {
+	for i = 0; i < fileSize; i += partSize {
 		copySourceRange := buildCopySourceRange(i, fileSize)
 		partWalker <- s3.UploadPartCopyInput{
-			Bucket:          &destBucket,
-			CopySource:      &copySource,
-			CopySourceRange: &copySourceRange,
-			Key:             &destKey,
+			Bucket:          aws.String(destBucket),
+			CopySource:      aws.String(copySource),
+			CopySourceRange: aws.String(copySourceRange),
+			Key:             aws.String(destKey),
 			PartNumber:      aws.Int32(partNumber),
-			UploadId:        &uploadId,
+			UploadId:        aws.String(uploadId),
 			RequestPayer:    s3types.RequestPayerRequester,
 		}
 		partNumber++
@@ -174,7 +173,7 @@ func createWorkerPool(ctx context.Context, svc *s3.Client, nrWorkers int, upload
 			RequestPayer: s3types.RequestPayerRequester,
 		}
 		//ignoring any errors with aborting the copy
-		_, err := svc.AbortMultipartUpload(context.TODO(), &abortIn)
+		_, err := svc.AbortMultipartUpload(ctx, &abortIn)
 		if err != nil {
 			logger.Error("error aborting failed upload session", "error", err)
 		}
@@ -216,9 +215,9 @@ func worker(ctx context.Context, svc *s3.Client, wg *sync.WaitGroup, workerId in
 		//copy etag and part number from response as it is needed for completion
 		if partResp != nil {
 			partNum := partInput.PartNumber
-			etag := strings.Trim(*partResp.CopyPartResult.ETag, "\"")
+			etag := partResp.CopyPartResult.ETag
 			cPart := s3types.CompletedPart{
-				ETag:       &etag,
+				ETag:       etag,
 				PartNumber: partNum,
 			}
 

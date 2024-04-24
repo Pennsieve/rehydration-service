@@ -9,6 +9,7 @@ import (
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"github.com/pennsieve/rehydration-service/shared/logging"
 	"github.com/pennsieve/rehydration-service/shared/notification"
+	"github.com/pennsieve/rehydration-service/shared/s3cleaner"
 	"github.com/pennsieve/rehydration-service/shared/tracking"
 	"log/slog"
 	"os"
@@ -59,7 +60,7 @@ func RehydrationTaskHandler(ctx context.Context, taskHandler *TaskHandler) error
 	var errs []error
 	for _, result := range results.FileResults {
 		if result.Error != nil {
-			errs = append(errs, fmt.Errorf("error rehydrating file %s: %w", result.Rehydration.Src.GetVersionedUri(), result.Error))
+			errs = append(errs, fmt.Errorf("error rehydrating file %s: %w", result.Rehydration.Src.GetCopySource(), result.Error))
 		}
 	}
 
@@ -95,6 +96,7 @@ type TaskHandler struct {
 	IdempotencyStore  idempotency.Store
 	TrackingStore     tracking.Store
 	Emailer           notification.Emailer
+	Cleaner           s3cleaner.Cleaner
 	Result            *TaskResult
 }
 
@@ -103,11 +105,16 @@ func NewTaskHandler(taskConfig *config.Config, multipartCopyThresholdBytes int64
 	if err != nil {
 		return nil, err
 	}
+	cleaner, err := taskConfig.Cleaner()
+	if err != nil {
+		return nil, err
+	}
 	return &TaskHandler{
 		DatasetRehydrator: NewDatasetRehydrator(taskConfig, multipartCopyThresholdBytes),
 		IdempotencyStore:  taskConfig.IdempotencyStore(),
 		TrackingStore:     taskConfig.TrackingStore(),
 		Emailer:           emailer,
+		Cleaner:           cleaner,
 	}, nil
 }
 

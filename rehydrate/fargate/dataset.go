@@ -12,22 +12,24 @@ import (
 )
 
 type DatasetRehydrator struct {
-	dataset           *models.Dataset
-	user              *models.User
-	pennsieveClient   *pennsieve.Client
-	processor         objects.Processor
-	logger            *slog.Logger
-	rehydrationBucket string
+	dataset            *models.Dataset
+	user               *models.User
+	pennsieveClient    *pennsieve.Client
+	processor          objects.Processor
+	logger             *slog.Logger
+	rehydrationBucket  string
+	rehydrationTTLDays int
 }
 
 func NewDatasetRehydrator(config *config.Config, thresholdSize int64) *DatasetRehydrator {
 	return &DatasetRehydrator{
-		dataset:           config.Env.Dataset,
-		user:              config.Env.User,
-		pennsieveClient:   config.PennsieveClient(),
-		processor:         config.ObjectProcessor(thresholdSize),
-		logger:            config.Logger,
-		rehydrationBucket: config.Env.RehydrationBucket,
+		dataset:            config.Env.Dataset,
+		user:               config.Env.User,
+		pennsieveClient:    config.PennsieveClient(),
+		processor:          config.ObjectProcessor(thresholdSize),
+		logger:             config.Logger,
+		rehydrationBucket:  config.Env.RehydrationBucket,
+		rehydrationTTLDays: config.Env.RehydrationTTLDays,
 	}
 }
 
@@ -62,16 +64,19 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		if err != nil {
 			return nil, fmt.Errorf("error retrieving dataset file %s by version: %w", j.Path, err)
 		}
+		source, err := NewSourceObject(datasetFileByVersionResponse.Uri,
+			datasetFileByVersionResponse.Size,
+			datasetFileByVersionResponse.Name,
+			datasetFileByVersionResponse.S3VersionID,
+			j.Path)
+		if err != nil {
+			return nil, fmt.Errorf("error creating Source for file %s: %w", j.Path, err)
+		}
 		rehydrations = append(rehydrations, NewRehydration(
-			SourceObject{
-				DatasetUri: datasetFileByVersionResponse.Uri,
-				Size:       datasetFileByVersionResponse.Size,
-				Name:       datasetFileByVersionResponse.Name,
-				VersionId:  datasetFileByVersionResponse.S3VersionID,
-				Path:       j.Path},
+			source,
 			DestinationObject{
 				Bucket: dr.rehydrationBucket,
-				Key: utils.CreateDestinationKey(dr.dataset.ID,
+				Key: utils.DestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
 					j.Path),
 			}))
@@ -119,11 +124,4 @@ type FileRehydrationResult struct {
 	Worker      int
 	Rehydration *Rehydration
 	Error       error
-}
-
-func (wr *FileRehydrationResult) LogGroups() []any {
-	if wr.Error != nil {
-		return wr.Rehydration.LogGroups(slog.Any("error", wr.Error))
-	}
-	return wr.Rehydration.LogGroups()
 }

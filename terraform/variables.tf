@@ -48,6 +48,8 @@ locals {
   rehydration_bucket_name        = "pennsieve-${var.environment_name}-rehydration-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   rehydration_logs_target_prefix = "${var.environment_name}/rehydration/s3/"
 
+  rehydration_ttl_days = 14
+
   common_tags = {
     aws_account      = var.aws_account
     aws_region       = data.aws_region.current_region.name

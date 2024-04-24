@@ -29,7 +29,7 @@ func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) err
 		copyLogger.Info("simple copy")
 		params := s3.CopyObjectInput{
 			Bucket:       aws.String(dest.GetBucket()),
-			CopySource:   aws.String(src.GetVersionedUri()),
+			CopySource:   aws.String(src.GetCopySource()),
 			Key:          aws.String(dest.GetKey()),
 			RequestPayer: types.RequestPayerRequester,
 		}
@@ -40,7 +40,7 @@ func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) err
 		}
 	} else {
 		copyLogger.Info("multipart copy")
-		err := utils.MultiPartCopy(r.S3, src.GetSize(), src.GetVersionedUri(), dest.GetBucket(), dest.GetKey(), copyLogger)
+		err := utils.MultiPartCopy(ctx, r.S3, src.GetSize(), src.GetCopySource(), dest.GetBucket(), dest.GetKey(), copyLogger)
 		if err != nil {
 			return fmt.Errorf("error processing multipart copy for %s: %w", src.GetName(), err)
 		}

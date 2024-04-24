@@ -8,15 +8,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/rehydration-service/service/ecs"
 	"github.com/pennsieve/rehydration-service/service/request"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
 	"log/slog"
+	"time"
 )
 
 const maxRetries = 2
 
 type Config struct {
-	Client           *dynamodb.Client
-	IdempotencyTable string
+	Client             *dynamodb.Client
+	IdempotencyTable   string
+	RehydrationTTLDays int
 }
 type Handler struct {
 	store      idempotency.Store
@@ -81,7 +84,7 @@ func (h *Handler) processIdempotency(ctx context.Context, datasetID, datasetVers
 			if err != nil {
 				return nil, err
 			}
-			return h.handleForStatus(record)
+			return h.handleForStatus(ctx, record)
 		}
 		// no record exists; we got some other error
 		return nil, err
@@ -107,17 +110,22 @@ func (h *Handler) getIdempotencyRecord(ctx context.Context, datasetID, datasetVe
 	return record, nil
 }
 
-func (h *Handler) handleForStatus(record *idempotency.Record) (*Response, error) {
+func (h *Handler) handleForStatus(ctx context.Context, record *idempotency.Record) (*Response, error) {
 	switch record.Status {
 	case idempotency.Expired:
 		return nil, ExpiredError{fmt.Sprintf("rehydration expiration in progress for %s", record.ID)}
 	case idempotency.InProgress:
 		// Treat this as normal and not an error. Tracking entry will be written and user notified when rehydration complete
 		return &Response{TaskARN: record.FargateTaskARN}, nil
-	default:
+	case idempotency.Completed:
+		if err := h.setExpirationDate(ctx, record); err != nil {
+			return nil, err
+		}
 		return &Response{
 			RehydrationLocation: record.RehydrationLocation,
 			TaskARN:             record.FargateTaskARN}, nil
+	default:
+		return nil, fmt.Errorf("unexpected status for %s: %s", record.ID, record.Status)
 	}
 }
 
@@ -136,6 +144,27 @@ func (h *Handler) startRehydrationTask(ctx context.Context) (*Response, error) {
 		h.request.Logger.Error("error setting taskARN of rehydration", slog.String("taskARN", taskARN), slog.Any("error", err))
 	}
 	return &Response{TaskARN: taskARN}, nil
+}
+
+func (h *Handler) setExpirationDate(ctx context.Context, record *idempotency.Record) error {
+	expirationDate := expiration.DateFromNow(h.request.RehydrationTTLDays)
+	if err := h.store.SetExpirationDate(ctx, record.ID, expirationDate); err != nil {
+		var recordDoesNotExist *idempotency.RecordDoesNotExistsError
+		if errors.As(err, &recordDoesNotExist) {
+			return &InconsistentStateError{message: recordDoesNotExist.Error()}
+		}
+		var conditionFailedError *idempotency.ConditionFailedError
+		if errors.As(err, &conditionFailedError) {
+			return &InconsistentStateError{message: conditionFailedError.Error()}
+		}
+		return fmt.Errorf("error setting expiration date of record %s to %s: %w",
+			record.ID,
+			expirationDate.Format(time.RFC3339Nano),
+			err)
+	}
+	h.request.Logger.Info("set expiration date",
+		slog.Time("expirationDate", expirationDate))
+	return nil
 }
 
 type InconsistentStateError struct {

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/pennsieve/rehydration-service/shared/expiration"
 	"github.com/pennsieve/rehydration-service/shared/idempotency"
+	"log/slog"
 )
 
 func (h *TaskHandler) finalizeIdempotency(ctx context.Context) error {
@@ -12,12 +14,42 @@ func (h *TaskHandler) finalizeIdempotency(ctx context.Context) error {
 	}
 	recordID := idempotency.RecordID(h.DatasetRehydrator.dataset.ID, h.DatasetRehydrator.dataset.VersionID)
 	if h.Result.Failed() {
+		return h.finalizeFailedIdempotency(ctx, recordID)
+	}
+	expirationDate := expiration.DateFromNow(h.DatasetRehydrator.rehydrationTTLDays)
+	record := idempotency.NewRecord(recordID, idempotency.Completed).
+		WithRehydrationLocation(h.Result.RehydrationLocation).
+		WithExpirationDate(&expirationDate)
+	return h.IdempotencyStore.UpdateRecord(ctx, *record)
+}
+
+// finalizeFailedIdempotency does the following to finalize the idempotency state of a failed rehydration
+//
+// * Sets the idempotency record's status to EXPIRED so that any incoming rehydration requests for this dataset version
+// fail while we clean up.
+// * Cleans the rehydration location in the S3 bucket by deleting any objects found there.
+// * Finally, deletes the idempotency record so that new rehydration requests for the dataset version can be handled in
+// the future. The idempotency record is not deleted if the clean is incomplete because of errors.
+func (h *TaskHandler) finalizeFailedIdempotency(ctx context.Context, recordID string) error {
+	if err := h.IdempotencyStore.ExpireRecord(ctx, recordID); err != nil {
+		return err
+	}
+	rehydrationBucket := h.DatasetRehydrator.rehydrationBucket
+	cleanResp, err := h.Cleaner.Clean(ctx, rehydrationBucket, recordID)
+	if err != nil {
+		return err
+	}
+	h.DatasetRehydrator.logger.Info("cleaned rehydration location",
+		slog.Group("rehydrationLocation", slog.String("bucket", rehydrationBucket), slog.String("prefix", recordID)),
+		slog.Int("fileCount", cleanResp.Count),
+		slog.Int("deletedCount", cleanResp.Deleted))
+	if len(cleanResp.Errors) == 0 {
 		return h.IdempotencyStore.DeleteRecord(ctx, recordID)
 	}
-	record := idempotency.Record{
-		ID:                  recordID,
-		RehydrationLocation: h.Result.RehydrationLocation,
-		Status:              idempotency.Completed,
+	for _, e := range cleanResp.Errors {
+		h.DatasetRehydrator.logger.Error("error deleting object",
+			slog.Group("object", slog.String("bucket", rehydrationBucket), slog.String("key", e.Key)),
+			slog.String("error", e.Message))
 	}
-	return h.IdempotencyStore.UpdateRecord(ctx, record)
+	return nil
 }

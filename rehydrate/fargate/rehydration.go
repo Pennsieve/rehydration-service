@@ -7,35 +7,36 @@ import (
 
 // SourceObject implements Source
 type SourceObject struct {
-	DatasetUri     string
-	DatasetVersion int32
-	Size           int64
-	Name           string
-	VersionId      string
-	Path           string
+	DatasetUri string
+	Size       int64
+	Name       string
+	VersionId  string
+	Path       string
+	CopySource string
 }
 
-// GetUri returns the dataset Uri, including the scheme
-func (s SourceObject) GetDatasetUri() string {
-	return s.DatasetUri
+func NewSourceObject(datasetUri string, size int64, name string, versionId string, path string) (*SourceObject, error) {
+	copySource, err := utils.VersionedCopySource(datasetUri, versionId)
+	if err != nil {
+		return nil, err
+	}
+	return &SourceObject{DatasetUri: datasetUri, Size: size, Name: name, VersionId: versionId, Path: path, CopySource: copySource}, nil
 }
 
-func (s SourceObject) GetSize() int64 {
+func (s *SourceObject) GetSize() int64 {
 	return s.Size
 }
 
-func (s SourceObject) GetName() string {
+func (s *SourceObject) GetName() string {
 	return s.Name
 }
 
-func (s SourceObject) GetPath() string {
+func (s *SourceObject) GetPath() string {
 	return s.Path
 }
 
-// Get versioned source Uri, excludes scheme
-func (s SourceObject) GetVersionedUri() string {
-	return utils.CreateVersionedSource(
-		s.GetDatasetUri(), s.VersionId)
+func (s *SourceObject) GetCopySource() string {
+	return s.CopySource
 }
 
 // DestinationObject implements Destination
@@ -58,15 +59,6 @@ type Rehydration struct {
 	Dest objects.Destination
 }
 
-func NewRehydration(src SourceObject, dest DestinationObject) *Rehydration {
+func NewRehydration(src *SourceObject, dest DestinationObject) *Rehydration {
 	return &Rehydration{src, dest}
-}
-
-// LogGroups transforms this Rehydration into a collection of structured logging properties to be used by a slog.Logger.
-// Example usage: slog.Info("file rehydration complete", r.LogGroups()...)
-// or slog.Error("file rehydration failed", r.LogGroups(slog.Any("error", err))...)
-func (r *Rehydration) LogGroups(additionalArgs ...any) []any {
-	groups := []any{objects.SourceLogGroup(r.Src), objects.DestinationLogGroup(r.Dest)}
-	groups = append(groups, additionalArgs)
-	return groups
 }

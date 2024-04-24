@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pennsieve/rehydration-service/shared/models"
@@ -14,6 +15,7 @@ import (
 
 const TableNameKey = "REQUEST_TRACKING_DYNAMODB_TABLE_NAME"
 const DatasetVersionIndexName = "DatasetVersionIndex"
+const ExpirationIndexName = "ExpirationIndex"
 
 type DyDBStore struct {
 	client *dynamodb.Client
@@ -30,35 +32,26 @@ func NewStore(client *dynamodb.Client, logger *slog.Logger, tableName string) St
 }
 
 func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate *time.Time, status RehydrationStatus) error {
-	expressionAttrNames := map[string]string{
-		"#emailSentDate": EmailSentDateAttrName,
-		"#status":        RehydrationStatusAttrName,
-	}
-	temp := &Entry{
-		DatasetVersionIndex: DatasetVersionIndex{
-			RehydrationStatus: status,
-			EmailSentDate:     emailSentDate,
-		},
-	}
-	expressionValues, err := temp.Item()
+	updateBuilder := expression.Set(
+		expression.Name(EmailSentDateAttrName),
+		expression.Value(emailSentDate),
+	).Set(
+		expression.Name(RehydrationStatusAttrName),
+		expression.Value(status),
+	)
+	conditionBuilder := expression.AttributeNotExists(expression.Name(EmailSentDateAttrName))
+	emailSentExpression, err := expression.NewBuilder().WithUpdate(updateBuilder).WithCondition(conditionBuilder).Build()
 	if err != nil {
-		return fmt.Errorf("error marshalling emailSentDate %s and rehydrationStatus %s: %w", emailSentDate, status, err)
+		return fmt.Errorf("error building EmailSent expression: %w", err)
 	}
-	expressionAttrValues := map[string]types.AttributeValue{
-		":emailSentDate": expressionValues[EmailSentDateAttrName],
-		":status":        expressionValues[RehydrationStatusAttrName],
-	}
-	updateExpression := "SET #emailSentDate = :emailSentDate, #status = :status"
-	conditionExpression := fmt.Sprintf("attribute_not_exists(%s)", EmailSentDateAttrName)
-
 	updateIn := &dynamodb.UpdateItemInput{
 		Key:                                 entryItemKeyFromID(id),
 		TableName:                           aws.String(s.table),
-		ConditionExpression:                 aws.String(conditionExpression),
-		ExpressionAttributeNames:            expressionAttrNames,
-		ExpressionAttributeValues:           expressionAttrValues,
+		ConditionExpression:                 emailSentExpression.Condition(),
+		ExpressionAttributeNames:            emailSentExpression.Names(),
+		ExpressionAttributeValues:           emailSentExpression.Values(),
 		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
-		UpdateExpression:                    aws.String(updateExpression),
+		UpdateExpression:                    emailSentExpression.Update(),
 	}
 	if _, err = s.client.UpdateItem(ctx, updateIn); err != nil {
 		var conditionFailedError *types.ConditionalCheckFailedException
@@ -79,25 +72,24 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate *tim
 func (s *DyDBStore) QueryDatasetVersionIndexUnhandled(ctx context.Context, dataset models.Dataset, limit int32) ([]DatasetVersionIndex, error) {
 	var indexEntries []DatasetVersionIndex
 	var errs []error
-	datasetVersionTerm := ":datasetVersion"
-	rehydrationStatusTerm := ":rehydrationStatus"
-	expressionValues := map[string]types.AttributeValue{
-		datasetVersionTerm:    stringAttributeValue(dataset.DatasetVersion()),
-		rehydrationStatusTerm: stringAttributeValue(string(InProgress)),
-	}
 
-	keyCondition := fmt.Sprintf("%s = %s", DatasetVersionAttrName, datasetVersionTerm)
-	filterExpression := fmt.Sprintf("attribute_not_exists(%s) AND %s = %s",
-		EmailSentDateAttrName,
-		RehydrationStatusAttrName,
-		rehydrationStatusTerm)
+	keyConditionBuilder := expression.KeyAnd(
+		expression.Key(DatasetVersionAttrName).Equal(expression.Value(dataset.DatasetVersion())),
+		expression.Key(RehydrationStatusAttrName).Equal(expression.Value(InProgress)),
+	)
+	filterBuilder := expression.AttributeNotExists(expression.Name(EmailSentDateAttrName))
+	queryExpression, err := expression.NewBuilder().WithKeyCondition(keyConditionBuilder).WithFilter(filterBuilder).Build()
+	if err != nil {
+		return nil, fmt.Errorf("error building QueryDatasetVersionIndexUnhandled expression: %w", err)
+	}
 
 	queryIn := &dynamodb.QueryInput{
 		TableName:                 aws.String(s.table),
 		IndexName:                 aws.String(DatasetVersionIndexName),
-		ExpressionAttributeValues: expressionValues,
-		KeyConditionExpression:    aws.String(keyCondition),
-		FilterExpression:          aws.String(filterExpression),
+		ExpressionAttributeNames:  queryExpression.Names(),
+		ExpressionAttributeValues: queryExpression.Values(),
+		KeyConditionExpression:    queryExpression.KeyCondition(),
+		FilterExpression:          queryExpression.Filter(),
 		Limit:                     aws.Int32(limit),
 	}
 	var lastEvaluatedKey map[string]types.AttributeValue

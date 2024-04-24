@@ -15,8 +15,8 @@ import (
 
 func TestMultiPartCopy(t *testing.T) {
 	//logging.Level.Set(slog.LevelDebug)
-	// set a lower chunkSize for the test
-	chunkSize = 5242880
+	// set a lower partSize for the test. This is 5 MiB, the minimum allowed part size
+	partSize = 5242880
 	ctx := context.Background()
 	awsConfig := test.NewAWSEndpoints(t).WithMinIO().Config(ctx, false)
 	sourceBucket := "test-source-bucket"
@@ -54,7 +54,7 @@ func TestMultiPartCopy(t *testing.T) {
 
 	copySource := fmt.Sprintf("%s/%s?versionId%s", sourceBucket, sourceKey, aws.ToString(putObjectOut.VersionId))
 	require.NoError(t,
-		MultiPartCopy(s3Fixture.Client,
+		MultiPartCopy(ctx, s3Fixture.Client,
 			testFileSize,
 			copySource,
 			targetBucket,

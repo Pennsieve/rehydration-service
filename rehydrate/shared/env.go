@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 const AWSRegionKey = "REGION"
@@ -18,4 +19,19 @@ func NonEmptyFromEnvVar(key string) (string, error) {
 	} else {
 		return value, nil
 	}
+}
+
+func IntFromEnvVar(key string) (int, error) {
+	strVal, err := NonEmptyFromEnvVar(key)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.Atoi(strVal)
+	if err != nil {
+		return 0, fmt.Errorf("error converting value %s of %s to int: %w",
+			strVal,
+			key,
+			err)
+	}
+	return value, nil
 }

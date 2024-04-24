@@ -12,11 +12,11 @@ type Processor interface {
 
 // source
 type Source interface {
-	GetVersionedUri() string
 	GetSize() int64
 	GetName() string
 	GetPath() string
-	GetDatasetUri() string
+	// GetCopySource returns a string to be used as the CopySource in AWS CopyObject or PartUploadCopy requests.
+	GetCopySource() string
 }
 
 // SourceLogGroup transforms a Source into a slog.Attr Group to be used for structured logging.
@@ -25,11 +25,10 @@ type Source interface {
 // sourceLogger := logger.With(SourceLogGroup(s))
 func SourceLogGroup(s Source) slog.Attr {
 	return slog.Group("source",
-		slog.String("versionedURI", s.GetVersionedUri()),
+		slog.String("copySource", s.GetCopySource()),
 		slog.Int64("size", s.GetSize()),
 		slog.String("name", s.GetName()),
-		slog.String("path", s.GetPath()),
-		slog.String("datasetURI", s.GetDatasetUri()))
+		slog.String("path", s.GetPath()))
 }
 
 // destination

@@ -21,6 +21,7 @@ type RehydrationRequest struct {
 	Dataset             sharedmodels.Dataset
 	User                sharedmodels.User
 	Logger              *slog.Logger
+	RehydrationTTLDays  int
 	lambdaRequest       events.APIGatewayV2HTTPRequest
 	lambdaLogStreamName string
 	awsRequestID        string
@@ -55,7 +56,7 @@ func validateRequest(request models.Request) *BadRequestError {
 	return nil
 }
 
-func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest) (*RehydrationRequest, error) {
+func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest, rehydrationTTLDays int) (*RehydrationRequest, error) {
 	requestID := uuid.NewString()
 	awsRequestID := lambdaRequest.RequestContext.RequestID
 	lambdaLogStreamName := lambdacontext.LogStreamName
@@ -96,6 +97,7 @@ func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest) (*Rehyd
 		awsRequestID:        awsRequestID,
 		requestID:           requestID,
 		trackingEntry:       trackingEntry,
+		RehydrationTTLDays:  rehydrationTTLDays,
 	}, nil
 }
 

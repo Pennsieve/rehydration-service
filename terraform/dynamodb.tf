@@ -8,6 +8,24 @@ resource "aws_dynamodb_table" "idempotency_table" {
     type = "S"
   }
 
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  attribute {
+    name = "expirationDate"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name               = "ExpirationIndex"
+    hash_key           = "status"
+    range_key          = "expirationDate"
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["id", "rehydrationLocation"]
+  }
+
   point_in_time_recovery {
     enabled = true
   }
@@ -41,11 +59,17 @@ resource "aws_dynamodb_table" "tracking_table" {
     type = "S"
   }
 
+  attribute {
+    name = "rehydrationStatus"
+    type = "S"
+  }
+
   global_secondary_index {
-    hash_key           = "datasetVersion"
     name               = "DatasetVersionIndex"
+    hash_key           = "datasetVersion"
+    range_key          = "rehydrationStatus"
     projection_type    = "INCLUDE"
-    non_key_attributes = ["id", "userName", "userEmail", "rehydrationStatus", "emailSentDate"]
+    non_key_attributes = ["id", "userName", "userEmail", "emailSentDate"]
   }
 
   point_in_time_recovery {

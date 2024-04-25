@@ -7,7 +7,7 @@ import (
 )
 
 func RehydrationLocation(destinationBucket string, datasetID, datasetVersionID int) string {
-	return fmt.Sprintf("s3://%s", path.Join(destinationBucket, DestinationKeyPrefix(datasetID, datasetVersionID)))
+	return fmt.Sprintf("s3://%s/%s", destinationBucket, DestinationKeyPrefix(datasetID, datasetVersionID))
 }
 func DestinationKeyPrefix(datasetID, datasetVersionID int) string {
 	return fmt.Sprintf("%d/%d/", datasetID, datasetVersionID)

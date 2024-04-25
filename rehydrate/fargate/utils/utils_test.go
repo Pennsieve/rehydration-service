@@ -34,7 +34,7 @@ func TestRehydrationLocation(t *testing.T) {
 	destinationBucket := "destination-bucket"
 	datasetId := 5070
 	versionId := 2
-	expectedLocation := fmt.Sprintf("s3://%s/%d/%d", destinationBucket, datasetId, versionId)
+	expectedLocation := fmt.Sprintf("s3://%s/%d/%d/", destinationBucket, datasetId, versionId)
 	location := utils.RehydrationLocation(destinationBucket, datasetId, versionId)
 	require.Equal(t, expectedLocation, location)
 }

@@ -58,6 +58,8 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     resources = [
       "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn}/*",
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
+      "${data.terraform_remote_state.platform_infrastructure.outputs.rejoin_publish50_bucket_arn}/*",
+      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
     ]
   }
 

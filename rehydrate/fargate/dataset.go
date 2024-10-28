@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/config"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"github.com/pennsieve/rehydration-service/shared/models"
-	"log/slog"
 )
 
 type DatasetRehydrator struct {
@@ -59,16 +60,21 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		if err != nil {
 			return nil, err
 		}
+		urlEscapedPath := utils.CreateURLEscapedPath(j.Path)
 		datasetFileByVersionResponse, err := dr.pennsieveClient.Discover.GetDatasetFileByVersion(
-			ctx, dataset32, version32, j.Path)
+			ctx, dataset32, version32, urlEscapedPath)
 		if err != nil {
 			return nil, fmt.Errorf("error retrieving dataset file %s by version: %w", j.Path, err)
+		}
+		awsEscapedPath := utils.CreateAWSEscapedPath(j.Path)
+		if awsEscapedPath == nil {
+			return nil, fmt.Errorf("error escaping source path")
 		}
 		source, err := NewSourceObject(datasetFileByVersionResponse.Uri,
 			datasetFileByVersionResponse.Size,
 			datasetFileByVersionResponse.Name,
 			datasetFileByVersionResponse.S3VersionID,
-			j.Path)
+			*awsEscapedPath)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Source for file %s: %w", j.Path, err)
 		}
@@ -78,7 +84,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 				Bucket: dr.rehydrationBucket,
 				Key: utils.DestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
-					j.Path),
+					*awsEscapedPath),
 			}))
 	}
 	// Only submit rehydrations once we know there are no GetDatasetFileByVersion errors

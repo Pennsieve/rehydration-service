@@ -2,8 +2,10 @@ package utils_test
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 )
@@ -37,4 +39,14 @@ func TestRehydrationLocation(t *testing.T) {
 	expectedLocation := fmt.Sprintf("s3://%s/%d/%d/", destinationBucket, datasetId, versionId)
 	location := utils.RehydrationLocation(destinationBucket, datasetId, versionId)
 	require.Equal(t, expectedLocation, location)
+}
+
+func TestCreateURLEscapedPath(t *testing.T) {
+	path := "files/primary/sub-P786/P786 Embedding Schematic.pptx"
+	result := utils.CreateURLEscapedPath(path)
+	assert.Equal(t, result, "files%2Fprimary%2Fsub-P786%2FP786+Embedding+Schematic.pptx")
+	// paths not requiring url encoding are left as-is
+	path = "P786EmbeddingSchematic.pptx"
+	result = utils.CreateURLEscapedPath(path)
+	assert.Equal(t, result, "P786EmbeddingSchematic.pptx")
 }

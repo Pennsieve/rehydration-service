@@ -24,8 +24,12 @@ func VersionedCopySource(uri string, version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error parsing S3 URI %s: %w", uri, err)
 	}
+	awsEscapedPath := CreateAWSEscapedPath(u.Path)
+	if awsEscapedPath == nil {
+		return "", fmt.Errorf("error escaping path %s", u.Path)
+	}
 	return fmt.Sprintf("%s%s?versionId=%s",
-		u.Host, u.Path, version), nil
+		u.Host, *awsEscapedPath, version), nil
 }
 
 func GetApiHost(env string) string {

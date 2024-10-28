@@ -66,15 +66,11 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 		if err != nil {
 			return nil, fmt.Errorf("error retrieving dataset file %s by version: %w", j.Path, err)
 		}
-		awsEscapedPath := utils.CreateAWSEscapedPath(j.Path)
-		if awsEscapedPath == nil {
-			return nil, fmt.Errorf("error escaping source path")
-		}
 		source, err := NewSourceObject(datasetFileByVersionResponse.Uri,
 			datasetFileByVersionResponse.Size,
 			datasetFileByVersionResponse.Name,
 			datasetFileByVersionResponse.S3VersionID,
-			*awsEscapedPath)
+			j.Path)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Source for file %s: %w", j.Path, err)
 		}
@@ -84,7 +80,7 @@ func (dr *DatasetRehydrator) rehydrate(ctx context.Context) (*RehydrationResult,
 				Bucket: dr.rehydrationBucket,
 				Key: utils.DestinationKey(dr.dataset.ID,
 					dr.dataset.VersionID,
-					*awsEscapedPath),
+					j.Path),
 			}))
 	}
 	// Only submit rehydrations once we know there are no GetDatasetFileByVersion errors

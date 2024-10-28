@@ -30,6 +30,16 @@ func TestCreateVersionedSource(t *testing.T) {
 	if result != expectedResult {
 		t.Errorf("got %s, expected %s", result, expectedResult)
 	}
+
+	// escaped path with spaces
+	datasetUri = "s3://dev-discover50-use1/85/files/primary/sub-P333/P777 Embedding Schematic.pptx"
+	version = "48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
+	result, err = utils.VersionedCopySource(datasetUri, version)
+	require.NoError(t, err)
+	expectedResult = "dev-discover50-use1/85/files/primary/sub-P333/P777%20Embedding%20Schematic.pptx?versionId=48iKzZl_XnOKz4M8XgEq1IhkzEItv5eU"
+	if result != expectedResult {
+		t.Errorf("got %s, expected %s", result, expectedResult)
+	}
 }
 
 func TestRehydrationLocation(t *testing.T) {

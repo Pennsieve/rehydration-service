@@ -50,3 +50,14 @@ func TestCreateURLEscapedPath(t *testing.T) {
 	result = utils.CreateURLEscapedPath(path)
 	assert.Equal(t, result, "P786EmbeddingSchematic.pptx")
 }
+
+func TestCreateAWSEscapedPath(t *testing.T) {
+	path := "files/primary/sub-P786/P786 Embedding Schematic.pptx"
+	result := utils.CreateAWSEscapedPath(path)
+	assert.Equal(t, *result, "files/primary/sub-P786/P786%20Embedding%20Schematic.pptx")
+
+	// paths not requiring url encoding are left as-is
+	path = "files/primary/sub-P786/P786EmbeddingSchematic.pptx"
+	result = utils.CreateAWSEscapedPath(path)
+	assert.Equal(t, *result, "files/primary/sub-P786/P786EmbeddingSchematic.pptx")
+}

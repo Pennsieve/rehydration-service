@@ -71,25 +71,30 @@ func main() {
 		if err != nil {
 			log.Fatalf("error creating destination bucket uri")
 		}
+		urlEscapedPath := utils.CreateURLEscapedPath(j.Path)
 		datasetFileByVersionResponse, err := pennsieveClient.Discover.GetDatasetFileByVersion(
-			ctx, int32(datasetId), int32(versionId), j.Path)
+			ctx, int32(datasetId), int32(versionId), urlEscapedPath)
 		if err != nil {
 			log.Fatalf("error retrieving dataset file by version")
 		}
 		log.Println(datasetFileByVersionResponse) // TODO: remove
 
+		awsEscapedPath := utils.CreateAWSEscapedPath(j.Path)
+		if awsEscapedPath == nil {
+			log.Fatalf("error escaping source path")
+		}
 		rehydrations <- NewRehydration(
 			SourceObject{
 				DatasetUri: datasetFileByVersionResponse.Uri,
 				Size:       j.Size,
 				Name:       j.Name,
 				VersionId:  datasetFileByVersionResponse.S3VersionID,
-				Path:       j.Path},
+				Path:       *awsEscapedPath},
 			DestinationObject{
 				Bucket: destinationBucket,
 				Key: utils.CreateDestinationKey(datasetByVersionReponse.ID,
 					datasetByVersionReponse.Version,
-					j.Path),
+					*awsEscapedPath),
 			})
 	}
 	close(rehydrations)

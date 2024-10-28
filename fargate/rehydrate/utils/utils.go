@@ -6,6 +6,9 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/smithy-go/encoding/httpbinding"
 )
 
 func CreateDestinationKey(datasetId int32, versionId int32, path string) string {
@@ -34,4 +37,16 @@ func GetApiHost(env string) string {
 	} else {
 		return "https://api.pennsieve.io"
 	}
+}
+
+func CreateAWSEscapedPath(s string) *string {
+	// Trial and error has shown that the encoding done by httpbinding.EscapePath works better
+	// with S3 than either url.PathEscape() or url.Parse().EscapedPath(). Those net/url methods
+	// resulted in 404 copy failures for some tricky file names.
+	escapedPath := httpbinding.EscapePath(s, false)
+	return aws.String(escapedPath)
+}
+
+func CreateURLEscapedPath(s string) string {
+	return url.QueryEscape(s)
 }

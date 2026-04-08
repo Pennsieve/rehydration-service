@@ -2,7 +2,7 @@ module github.com/pennsieve/rehydration-service/shared
 
 // shared is a module for code that is shared between the service lambda and the fargate task
 // It lives here so that it can be referenced in the Dockerfile for the fargate task
-go 1.21
+go 1.24
 
 require (
 	github.com/aws/aws-lambda-go v1.46.0
@@ -15,14 +15,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.1
 	github.com/aws/aws-sdk-go-v2/service/ses v1.22.3
-	github.com/aws/smithy-go v1.20.2
+	github.com/aws/smithy-go v1.24.2
 	github.com/google/uuid v1.6.0
 	github.com/pennsieve/pennsieve-go v1.3.1
 	github.com/stretchr/testify v1.8.4
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.14.11 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.5 // indirect

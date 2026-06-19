@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/pennsieve/pennsieve-go/pkg/pennsieve"
 	"github.com/pennsieve/rehydration-service/fargate/objects"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
@@ -34,6 +35,7 @@ type Config struct {
 	s3ClientSupplier   *awsclient.Supplier[s3.Client, s3.Options]
 	dyDBClientSupplier *awsclient.Supplier[dynamodb.Client, dynamodb.Options]
 	sesClientSupplier  *awsclient.Supplier[ses.Client, ses.Options]
+	sqsClientSupplier  *awsclient.Supplier[sqs.Client, sqs.Options]
 }
 
 func NewConfig(awsConfig aws.Config, env *Env) *Config {
@@ -46,6 +48,7 @@ func NewConfig(awsConfig aws.Config, env *Env) *Config {
 		s3ClientSupplier:   awsclient.NewSupplier(s3.NewFromConfig, awsConfig),
 		dyDBClientSupplier: awsclient.NewSupplier(dynamodb.NewFromConfig, awsConfig),
 		sesClientSupplier:  awsclient.NewSupplier(ses.NewFromConfig, awsConfig),
+		sqsClientSupplier:  awsclient.NewSupplier(sqs.NewFromConfig, awsConfig),
 	}
 }
 
@@ -97,7 +100,14 @@ func (c *Config) SetObjectProcessor(objectProcessor objects.Processor) {
 
 func (c *Config) Emailer() (notification.Emailer, error) {
 	if c.emailer == nil {
-		emailer, err := notification.NewEmailer(c.sesClientSupplier.Get(), c.Env.PennsieveDomain, c.Env.AWSRegion)
+		// Emails are sent via the Pennsieve email-service (enqueue -> consumer
+		// renders + delivers), replacing the previous direct-SES emailer.
+		emailer, err := notification.NewQueueEmailer(
+			c.sqsClientSupplier.Get(),
+			c.Env.EmailServiceQueueURL,
+			c.Env.PennsieveDomain,
+			c.Env.AWSRegion,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -128,16 +138,17 @@ func (c *Config) SetCleaner(cleaner s3cleaner.Cleaner) {
 }
 
 type Env struct {
-	Dataset            *models.Dataset
-	User               *models.User
-	TaskEnv            string
-	PennsieveHost      string
-	IdempotencyTable   string
-	TrackingTable      string
-	PennsieveDomain    string
-	AWSRegion          string
-	RehydrationBucket  string
-	RehydrationTTLDays int
+	Dataset              *models.Dataset
+	User                 *models.User
+	TaskEnv              string
+	PennsieveHost        string
+	IdempotencyTable     string
+	TrackingTable        string
+	PennsieveDomain      string
+	AWSRegion            string
+	RehydrationBucket    string
+	RehydrationTTLDays   int
+	EmailServiceQueueURL string
 }
 
 func LookupEnv() (*Env, error) {
@@ -178,17 +189,22 @@ func LookupEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	emailServiceQueueURL, err := shared.NonEmptyFromEnvVar("EMAIL_SERVICE_QUEUE_URL")
+	if err != nil {
+		return nil, err
+	}
 	return &Env{
-		Dataset:            dataset,
-		User:               user,
-		TaskEnv:            env,
-		PennsieveHost:      pennsieveHost,
-		IdempotencyTable:   idempotencyTable,
-		TrackingTable:      trackingTable,
-		PennsieveDomain:    pennsieveDomain,
-		AWSRegion:          awsRegion,
-		RehydrationBucket:  rehydrationBucket,
-		RehydrationTTLDays: rehydrationTTLDays,
+		Dataset:              dataset,
+		User:                 user,
+		TaskEnv:              env,
+		PennsieveHost:        pennsieveHost,
+		IdempotencyTable:     idempotencyTable,
+		TrackingTable:        trackingTable,
+		PennsieveDomain:      pennsieveDomain,
+		AWSRegion:            awsRegion,
+		RehydrationBucket:    rehydrationBucket,
+		RehydrationTTLDays:   rehydrationTTLDays,
+		EmailServiceQueueURL: emailServiceQueueURL,
 	}, nil
 }
 

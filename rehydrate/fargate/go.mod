@@ -2,6 +2,13 @@ module github.com/pennsieve/rehydration-service/fargate
 
 go 1.21
 
+// BLOCKED on email-service tagging its client module. config/config.go now uses
+// aws-sdk-go-v2/service/sqs (and transitively the email-service client via the
+// shared module). Once email-service is published, add the sqs require and run
+// `go mod tidy`:
+//
+//	require github.com/aws/aws-sdk-go-v2/service/sqs <version>
+
 replace github.com/pennsieve/rehydration-service/shared => ./../shared
 
 require (

@@ -28,13 +28,13 @@ func main() {
 	ctx := context.Background()
 	taskConfig, err := initConfig(ctx)
 	if err != nil {
-		logging.Default.Error("error initializing config", err)
+		logging.Default.Error("error initializing config", slog.Any("error", err))
 		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}
 	taskHandler, err := NewTaskHandler(taskConfig, ThresholdSize)
 	if err != nil {
-		logging.Default.Error("error creating TaskHandler", err)
+		logging.Default.Error("error creating TaskHandler", slog.Any("error", err))
 		logging.Default.Warn("task failed prior to creating idempotency store; idempotency record has not been deleted")
 		os.Exit(1)
 	}

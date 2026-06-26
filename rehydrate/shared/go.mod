@@ -2,14 +2,8 @@ module github.com/pennsieve/rehydration-service/shared
 
 // shared is a module for code that is shared between the service lambda and the fargate task
 // It lives here so that it can be referenced in the Dockerfile for the fargate task
-go 1.24
 
-// BLOCKED on email-service tagging its client module. notification/queue.go
-// needs these once github.com/pennsieve/email-service is published; then run
-// `go mod tidy` (rehydration is already on aws-sdk-go-v2 v1.26, so no SDK bump):
-//
-//	require github.com/pennsieve/email-service <version>
-//	require github.com/aws/aws-sdk-go-v2/service/sqs <version>
+go 1.24
 
 require (
 	github.com/aws/aws-lambda-go v1.46.0

@@ -13,7 +13,8 @@
       { "name" : "ENV", "value": "${environment_name}" },
       { "name" : "REGION", "value": "${aws_region}" },
       { "name" : "REHYDRATION_BUCKET", "value": "${rehydration_bucket}" },
-      { "name" : "REHYDRATION_TTL_DAYS", "value": "${rehydration_ttl_days}" }
+      { "name" : "REHYDRATION_TTL_DAYS", "value": "${rehydration_ttl_days}" },
+      { "name" : "EMAIL_SERVICE_QUEUE_URL", "value": "${email_service_queue_url}" }
     ],
     "name": "${tier}",
     "image": "${image_url}:${image_tag}",

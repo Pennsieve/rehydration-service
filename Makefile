@@ -61,7 +61,11 @@ test: local-services email-templates
 # Run dockerized tests (used on Jenkins)
 test-ci: docker-clean
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --exit-code-from=tests-ci tests-ci
+	# --build forces the test image to rebuild from Dockerfile.test, so a bumped
+	# base image (e.g. golang:1.24-alpine) is actually picked up instead of a
+	# stale cached image. Without it, docker-compose reuses an old image and the
+	# tests run under the previous Go version.
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --build --exit-code-from=tests-ci tests-ci
 
 clean: docker-clean html-clean npm-clean
 	rm -fr $(LAMBDA_BIN)

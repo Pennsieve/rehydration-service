@@ -33,3 +33,6 @@ To modify the templates you will need to:
 * make the changes to the source in `message-templates/mjml`
 * run `make email-templates` to generate the HTML files (located in `rehydrate/shared/notification/html`)
 
+
+## Go Version
+1.24

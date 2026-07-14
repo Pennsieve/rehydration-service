@@ -15,6 +15,7 @@ data "template_file" "rehydration_task_definition" {
     tier                   = var.tier
     rehydration_bucket     = aws_s3_bucket.rehydration_s3_bucket.id
     rehydration_ttl_days   = local.rehydration_ttl_days
+    email_service_queue_url = data.terraform_remote_state.email_service.outputs.email_service_queue_url
   }
 }
 

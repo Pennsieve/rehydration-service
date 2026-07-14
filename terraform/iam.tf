@@ -114,6 +114,28 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
     resources = ["*"]
   }
 
+  # Enqueue rehydration emails on the email-service send queue (QueueEmailer).
+  statement {
+    sid    = "RehydrationFargateEmailServiceSQSPermissions"
+    effect = "Allow"
+    actions = [
+      "sqs:SendMessage",
+      "sqs:GetQueueAttributes",
+    ]
+    resources = [data.terraform_remote_state.email_service.outputs.email_service_queue_arn]
+  }
+
+  # The send queue is KMS-encrypted; sending requires use of its key.
+  statement {
+    sid    = "RehydrationFargateEmailServiceKMSPermissions"
+    effect = "Allow"
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
+    ]
+    resources = [data.terraform_remote_state.email_service.outputs.email_service_queue_kms_key_arn]
+  }
+
   statement {
     sid     = "TaskLogPermissions"
     effect  = "Allow"

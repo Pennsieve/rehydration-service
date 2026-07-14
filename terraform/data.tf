@@ -37,6 +37,18 @@ data "terraform_remote_state" "platform_infrastructure" {
   }
 }
 
+# Import the email-service, to send rehydration emails via its SQS queue.
+data "terraform_remote_state" "email_service" {
+  backend = "s3"
+
+  config = {
+    bucket  = "${var.aws_account}-terraform-state"
+    key     = "aws/${data.aws_region.current_region.name}/${var.vpc_name}/${var.environment_name}/email-service/terraform.tfstate"
+    region  = "us-east-1"
+    profile = var.aws_account
+  }
+}
+
 # Import AWS Default SecretsManager KMS Key
 data "aws_kms_key" "ssm_kms_key" {
   key_id = "alias/aws/secretsmanager"

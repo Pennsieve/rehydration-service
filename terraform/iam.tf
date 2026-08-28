@@ -72,6 +72,7 @@ data "aws_iam_policy_document" "rehydration_fargate_iam_policy_document" {
 
     actions = [
       "s3:PutObject",
+      "s3:PutObjectTagging",
       "s3:DeleteObject",
       "s3:ListBucket",
       "s3:AbortMultipartUpload"

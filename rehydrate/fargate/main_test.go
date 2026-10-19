@@ -75,18 +75,16 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			oldCompletedRequestDate := time.Now().Add(-time.Hour * 24)
 			oldCompletedEmailSentDate := oldCompletedRequestDate.Add(time.Hour * 12)
 			oldCompletedEntry := &tracking.Entry{
-				DatasetVersionIndex: tracking.DatasetVersionIndex{
-					ID:                uuid.NewString(),
-					DatasetVersion:    dataset.DatasetVersion(),
-					UserName:          "Hal Blaine",
-					UserEmail:         "hb@example.com",
-					RehydrationStatus: tracking.Completed,
-					EmailSentDate:     &oldCompletedEmailSentDate,
-				},
-				LambdaLogStream: uuid.NewString(),
-				AWSRequestID:    uuid.NewString(),
-				RequestDate:     oldCompletedRequestDate,
-				FargateTaskARN:  uuid.NewString(),
+				ID:                uuid.NewString(),
+				DatasetVersion:    dataset.DatasetVersion(),
+				UserName:          "Hal Blaine",
+				UserEmail:         "hb@example.com",
+				RehydrationStatus: tracking.Completed,
+				EmailSentDate:     &oldCompletedEmailSentDate,
+				LambdaLogStream:   uuid.NewString(),
+				AWSRequestID:      uuid.NewString(),
+				RequestDate:       oldCompletedRequestDate,
+				FargateTaskARN:    uuid.NewString(),
 			}
 			oldEntriesByID[oldCompletedEntry.ID] = oldCompletedEntry
 			// An old entry for a previous, failed rehydration of the same dataset
@@ -96,17 +94,15 @@ func TestRehydrationTaskHandler(t *testing.T) {
 			// was also an error when sending the failure notification email.
 			oldFailedRequestDate := time.Now().Add(-time.Hour * 24)
 			oldFailedEntry := &tracking.Entry{
-				DatasetVersionIndex: tracking.DatasetVersionIndex{
-					ID:                uuid.NewString(),
-					DatasetVersion:    dataset.DatasetVersion(),
-					UserName:          "Harry Gorman",
-					UserEmail:         "gorman@example.com",
-					RehydrationStatus: tracking.Failed,
-				},
-				LambdaLogStream: uuid.NewString(),
-				AWSRequestID:    uuid.NewString(),
-				RequestDate:     oldFailedRequestDate,
-				FargateTaskARN:  uuid.NewString(),
+				ID:                uuid.NewString(),
+				DatasetVersion:    dataset.DatasetVersion(),
+				UserName:          "Harry Gorman",
+				UserEmail:         "gorman@example.com",
+				RehydrationStatus: tracking.Failed,
+				LambdaLogStream:   uuid.NewString(),
+				AWSRequestID:      uuid.NewString(),
+				RequestDate:       oldFailedRequestDate,
+				FargateTaskARN:    uuid.NewString(),
 			}
 			oldEntriesByID[oldFailedEntry.ID] = oldFailedEntry
 			// New entries for this rehydration. Should be updated and emails sent.
@@ -519,7 +515,7 @@ type mockFailedEmailCall struct {
 
 func (m *MockEmailer) SendRehydrationComplete(_ context.Context, dataset models.Dataset, user models.User, rehydrationLocation string) error {
 	m.complete = append(m.complete, mockCompleteEmailCall{
-		mockEmailCall:       mockEmailCall{dataset: dataset, user: user},
+		dataset: dataset, user: user,
 		rehydrationLocation: rehydrationLocation,
 	})
 	return nil
@@ -527,8 +523,8 @@ func (m *MockEmailer) SendRehydrationComplete(_ context.Context, dataset models.
 
 func (m *MockEmailer) SendRehydrationFailed(_ context.Context, dataset models.Dataset, user models.User, requestID string) error {
 	m.failed = append(m.failed, mockFailedEmailCall{
-		mockEmailCall: mockEmailCall{dataset: dataset, user: user},
-		requestID:     requestID,
+		dataset: dataset, user: user,
+		requestID: requestID,
 	})
 	return nil
 }

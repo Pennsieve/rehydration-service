@@ -77,12 +77,10 @@ func NewRehydrationRequest(lambdaRequest events.APIGatewayV2HTTPRequest, rehydra
 		slog.Group("user", slog.String("name", user.Name), slog.String("email", user.Email)))
 
 	trackingEntry := &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:             requestID,
-			DatasetVersion: dataset.DatasetVersion(),
-			UserName:       user.Name,
-			UserEmail:      user.Email,
-		},
+		ID:              requestID,
+		DatasetVersion:  dataset.DatasetVersion(),
+		UserName:        user.Name,
+		UserEmail:       user.Email,
 		LambdaLogStream: lambdaLogStreamName,
 		AWSRequestID:    awsRequestID,
 		RequestDate:     time.Now(),

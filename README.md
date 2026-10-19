@@ -35,4 +35,4 @@ To modify the templates you will need to:
 
 
 ## Go Version
-1.24
+1.27.2

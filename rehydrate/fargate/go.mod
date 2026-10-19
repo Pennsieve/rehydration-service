@@ -1,8 +1,6 @@
 module github.com/pennsieve/rehydration-service/fargate
 
-go 1.23.0
-
-toolchain go1.23.9
+go 1.27.2
 
 replace github.com/pennsieve/rehydration-service/shared => ./../shared
 

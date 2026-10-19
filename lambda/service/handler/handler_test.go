@@ -42,8 +42,8 @@ func TestRehydrationServiceHandler(t *testing.T) {
 	rehydrationServiceHandlerEnv.Setenv(t)
 
 	request := models.Request{
-		Dataset: sharedmodels.Dataset{ID: 5065, VersionID: 2},
-		User:    sharedmodels.User{Name: "First Last", Email: "last@example.com"},
+		ID: 5065, VersionID: 2,
+		Name: "First Last", Email: "last@example.com",
 	}
 	expectedTaskARN := "arn:aws:ecs:test-task-arn"
 
@@ -344,11 +344,11 @@ func TestRehydrationServiceHandler_BadRequests(t *testing.T) {
 		"empty body":               {"", "unmarshall"},
 		"non-json body":            {"not a json body", "unmarshall"},
 		"wrong format":             {`{"some": "other", "wrong": "format"}`, "missing"},
-		"missing datasetId":        {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{VersionID: 3}, User: sharedmodels.User{Name: "First Last", Email: "last@example.com"}}), "datasetId"},
-		"missing datasetVersionId": {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879}, User: sharedmodels.User{Name: "First Last", Email: "last@example.com"}}), "datasetVersionId"},
-		"empty name":               {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879, VersionID: 4}, User: sharedmodels.User{Email: "last@example.com"}}), "name"},
-		"empty email":              {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879, VersionID: 4}, User: sharedmodels.User{Name: "First Last"}}), "email"},
-		"invalid email":            {requestToBody(t, models.Request{Dataset: sharedmodels.Dataset{ID: 3879, VersionID: 4}, User: sharedmodels.User{Name: "First Last", Email: "invalid&address"}}), "email"},
+		"missing datasetId":        {requestToBody(t, models.Request{VersionID: 3, Name: "First Last", Email: "last@example.com"}), "datasetId"},
+		"missing datasetVersionId": {requestToBody(t, models.Request{ID: 3879, Name: "First Last", Email: "last@example.com"}), "datasetVersionId"},
+		"empty name":               {requestToBody(t, models.Request{ID: 3879, VersionID: 4, Email: "last@example.com"}), "name"},
+		"empty email":              {requestToBody(t, models.Request{ID: 3879, VersionID: 4, Name: "First Last"}), "email"},
+		"invalid email":            {requestToBody(t, models.Request{ID: 3879, VersionID: 4, Name: "First Last", Email: "invalid&address"}), "email"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -375,7 +375,7 @@ func newLambdaRequest(body string) events.APIGatewayV2HTTPRequest {
 			Method: "POST",
 		},
 		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			Lambda: make(map[string]interface{}),
+			Lambda: make(map[string]any),
 		},
 	}
 

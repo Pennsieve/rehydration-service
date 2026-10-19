@@ -58,7 +58,7 @@ func (c *S3Cleaner) Clean(ctx context.Context, bucket string, keyPrefix string) 
 		count += countInPage
 		if countInPage > 0 {
 			batch := make([]types.ObjectIdentifier, countInPage)
-			for i := 0; i < countInPage; i++ {
+			for i := range countInPage {
 				batch[i] = types.ObjectIdentifier{
 					Key: listOut.Contents[i].Key,
 				}

@@ -75,8 +75,7 @@ func (s *DyDBStore) PutRecord(ctx context.Context, record Record) error {
 	if _, err = s.client.PutItem(ctx, &in); err == nil {
 		return nil
 	}
-	var conditionFailedError *types.ConditionalCheckFailedException
-	if errors.As(err, &conditionFailedError) {
+	if conditionFailedError, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 		alreadyExistsError := &RecordAlreadyExistsError{}
 		if existingRecord, err := FromItem(conditionFailedError.Item); err == nil {
 			alreadyExistsError.Existing = existingRecord
@@ -165,8 +164,7 @@ func (s *DyDBStore) ExpireRecord(ctx context.Context, recordID string) error {
 		ConditionExpression:       expireRecordExpression.Condition(),
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
-		var conditionFailedError *types.ConditionalCheckFailedException
-		if errors.As(err, &conditionFailedError) {
+		if _, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 			return &RecordDoesNotExistsError{RecordID: recordID}
 		}
 		return fmt.Errorf("error expiring record %s: %w", recordID, err)
@@ -199,8 +197,7 @@ func (s *DyDBStore) SetExpirationDate(ctx context.Context, recordID string, expi
 		ReturnValuesOnConditionCheckFailure: types.ReturnValuesOnConditionCheckFailureAllOld,
 	}
 	if _, err := s.client.UpdateItem(ctx, in); err != nil {
-		var conditionFailedError *types.ConditionalCheckFailedException
-		if errors.As(err, &conditionFailedError) {
+		if conditionFailedError, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 			if len(conditionFailedError.Item) == 0 {
 				return &RecordDoesNotExistsError{RecordID: recordID}
 			}
@@ -284,8 +281,7 @@ func (s *DyDBStore) ExpireByIndex(ctx context.Context, index ExpirationIndex) (*
 	}
 	out, err := s.client.UpdateItem(ctx, in)
 	if err != nil {
-		var conditionFailedError *types.ConditionalCheckFailedException
-		if errors.As(err, &conditionFailedError) {
+		if conditionFailedError, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 			if len(conditionFailedError.Item) == 0 {
 				return nil, &RecordDoesNotExistsError{RecordID: index.ID}
 			}

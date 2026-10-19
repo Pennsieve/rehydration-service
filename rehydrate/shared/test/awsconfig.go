@@ -64,7 +64,7 @@ func (e *AWSEndpoints) Config(ctx context.Context, logRequests bool) aws.Config 
 	optFns := []func(options *config.LoadOptions) error{
 		config.WithRegion("us-east-1"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(awsKey, awsSecret, "")),
-		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...any) (aws.Endpoint, error) {
 			if endpoint, ok := e.serviceIDToEndpoint[service]; ok {
 				return endpoint, nil
 			}

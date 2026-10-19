@@ -55,7 +55,7 @@ func fromAWSError(awsError types.Error) DeleteObjectError {
 
 func fromAWSErrors(awsErrors []types.Error) []DeleteObjectError {
 	deleteObjectErrors := make([]DeleteObjectError, len(awsErrors))
-	for i := 0; i < len(awsErrors); i++ {
+	for i := range awsErrors {
 		deleteObjectErrors[i] = fromAWSError(awsErrors[i])
 	}
 	return deleteObjectErrors

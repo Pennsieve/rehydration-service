@@ -152,19 +152,17 @@ func NewTestDatasetFiles(dataset models.Dataset, count int) *TestDatasetFiles {
 	datasetFiles := make([]TestDatasetFile, count)
 	datasetFilesByPath := map[string]*TestDatasetFile{}
 	datasetFilesByKey := map[string]*TestDatasetFile{}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		name := fmt.Sprintf("file%d.txt", i)
 		path := fmt.Sprintf("files/dir%d/%s", i, name)
 		content := fmt.Sprintf("content of %s\n", name)
 		datasetFile := TestDatasetFile{
-			DatasetFile: discover.DatasetFile{
-				Name:     name,
-				Path:     path,
-				FileType: "TEXT",
-				Size:     int64(len([]byte(content))),
-			},
-			content: content,
-			s3key:   fmt.Sprintf("%d/%s", dataset.ID, path),
+			Name:     name,
+			Path:     path,
+			FileType: "TEXT",
+			Size:     int64(len([]byte(content))),
+			content:  content,
+			s3key:    fmt.Sprintf("%d/%s", dataset.ID, path),
 		}
 		datasetFiles[i] = datasetFile
 		datasetFilesByPath[datasetFile.Path] = &datasetFiles[i]

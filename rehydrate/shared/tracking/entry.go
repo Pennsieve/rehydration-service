@@ -77,17 +77,15 @@ type Entry struct {
 func NewEntry(id string, dataset models.Dataset, user models.User, lambdaLogStream, awsRequestID, fargateTaskARN string) *Entry {
 	requestDate := time.Now()
 	return &Entry{
-		DatasetVersionIndex: DatasetVersionIndex{
-			ID:                id,
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: InProgress,
-		},
-		LambdaLogStream: lambdaLogStream,
-		AWSRequestID:    awsRequestID,
-		RequestDate:     requestDate,
-		FargateTaskARN:  fargateTaskARN,
+		ID:                id,
+		DatasetVersion:    dataset.DatasetVersion(),
+		UserName:          user.Name,
+		UserEmail:         user.Email,
+		RehydrationStatus: InProgress,
+		LambdaLogStream:   lambdaLogStream,
+		AWSRequestID:      awsRequestID,
+		RequestDate:       requestDate,
+		FargateTaskARN:    fargateTaskARN,
 	}
 }
 

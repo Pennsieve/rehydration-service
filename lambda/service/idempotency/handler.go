@@ -78,8 +78,7 @@ func (h *Handler) processIdempotency(ctx context.Context, datasetID, datasetVers
 	// try to create a new idempotency record; error if one exists
 	if err := h.store.SaveInProgress(ctx, datasetID, datasetVersionID); err != nil {
 		// If a record exists, respond with an existing rehydration location if we can, otherwise an error
-		var recordAlreadyExistsError *idempotency.RecordAlreadyExistsError
-		if errors.As(err, &recordAlreadyExistsError) {
+		if recordAlreadyExistsError, ok := errors.AsType[*idempotency.RecordAlreadyExistsError](err); ok {
 			record, err := h.getIdempotencyRecord(ctx, datasetID, datasetVersionID, recordAlreadyExistsError)
 			if err != nil {
 				return nil, err
@@ -149,12 +148,10 @@ func (h *Handler) startRehydrationTask(ctx context.Context) (*Response, error) {
 func (h *Handler) setExpirationDate(ctx context.Context, record *idempotency.Record) error {
 	expirationDate := expiration.DateFromNow(h.request.RehydrationTTLDays)
 	if err := h.store.SetExpirationDate(ctx, record.ID, expirationDate); err != nil {
-		var recordDoesNotExist *idempotency.RecordDoesNotExistsError
-		if errors.As(err, &recordDoesNotExist) {
+		if recordDoesNotExist, ok := errors.AsType[*idempotency.RecordDoesNotExistsError](err); ok {
 			return &InconsistentStateError{message: recordDoesNotExist.Error()}
 		}
-		var conditionFailedError *idempotency.ConditionFailedError
-		if errors.As(err, &conditionFailedError) {
+		if conditionFailedError, ok := errors.AsType[*idempotency.ConditionFailedError](err); ok {
 			return &InconsistentStateError{message: conditionFailedError.Error()}
 		}
 		return fmt.Errorf("error setting expiration date of record %s to %s: %w",

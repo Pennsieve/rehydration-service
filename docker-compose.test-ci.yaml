@@ -20,7 +20,7 @@ services:
     image: amazon/dynamodb-local
     restart: always
   minio-ci:
-    image: minio/minio
+    image: chainguard/minio:latest
     env_file:
       - test-common.env # contains root creds for minio
     command: server --console-address ":9001" /data

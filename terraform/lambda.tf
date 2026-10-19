@@ -1,11 +1,11 @@
 ### REHYDRATION TRIGGER
 
 resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
-  description                    = "Lambda Function which triggers FARGATE to start rehydration task"
+  description                    = "Lambda Function which triggers FARGATE to start rehydration task (image tag: ${var.image_tag})"
   function_name                  = "${var.environment_name}-${var.service_name}-fargate-trigger-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   reserved_concurrent_executions = 1 // don't allow concurrent lambda's
   handler                        = "bootstrap"
-  runtime                        = "provided.al2"
+  runtime                        = "provided.al2023"
   architectures                  = ["arm64"]
   role                           = aws_iam_role.rehydration_lambda_role.arn
   timeout                        = 30
@@ -23,6 +23,7 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
   environment {
     variables = {
       ENV                                    = var.environment_name
+      IMAGE_TAG                              = var.image_tag
       TASK_DEF_ARN                           = aws_ecs_task_definition.rehydration_ecs_task_definition.arn,
       CLUSTER_ARN                            = data.terraform_remote_state.fargate.outputs.ecs_cluster_arn,
       SUBNET_IDS                             = join(",", data.terraform_remote_state.vpc.outputs.private_subnet_ids),
@@ -36,13 +37,19 @@ resource "aws_lambda_function" "rehydration_fargate_trigger_lambda" {
       REHYDRATION_TTL_DAYS                   = local.rehydration_ttl_days,
     }
   }
+
+  # Resource tag: discoverable in the Console (Tags tab) and fleet-wide via the
+  # Resource Groups Tagging API (get-resources --tag-filters Key=ImageTag).
+  tags = merge(local.common_tags, {
+    ImageTag = var.image_tag
+  })
 }
 
 resource "aws_lambda_function" "expiration_lambda" {
-  description   = "A function to run periodically to search for Rehydrations that should be expired and deleted"
+  description   = "A function to run periodically to search for Rehydrations that should be expired and deleted (image tag: ${var.image_tag})"
   function_name = "${var.environment_name}-rehydration-expiration-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   handler       = "bootstrap"
-  runtime       = "provided.al2"
+  runtime       = "provided.al2023"
   architectures = ["arm64"]
   role          = aws_iam_role.expiration_lambda_role.arn
   timeout       = 300
@@ -58,11 +65,18 @@ resource "aws_lambda_function" "expiration_lambda" {
   environment {
     variables = {
       ENV                                    = var.environment_name
+      IMAGE_TAG                              = var.image_tag
       PENNSIEVE_DOMAIN                       = data.terraform_remote_state.account.outputs.domain_name,
       REGION                                 = var.aws_region,
       FARGATE_IDEMPOTENT_DYNAMODB_TABLE_NAME = aws_dynamodb_table.idempotency_table.name,
     }
   }
+
+  # Resource tag: discoverable in the Console (Tags tab) and fleet-wide via the
+  # Resource Groups Tagging API (get-resources --tag-filters Key=ImageTag).
+  tags = merge(local.common_tags, {
+    ImageTag = var.image_tag
+  })
 }
 
 resource "aws_lambda_permission" "expiration_rule_permission" {

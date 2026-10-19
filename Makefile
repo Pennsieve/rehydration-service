@@ -84,7 +84,7 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/service; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/service/bootstrap; \
+  		env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o $(LAMBDA_BIN)/service/bootstrap; \
 		cd $(LAMBDA_BIN)/service/ ; \
 			zip -r $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) .
 	@echo ""
@@ -93,7 +93,7 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/expiration; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/expiration/bootstrap; \
+  		env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o $(LAMBDA_BIN)/expiration/bootstrap; \
 		cd $(LAMBDA_BIN)/expiration/ ; \
 			zip -r $(LAMBDA_BIN)/expiration/$(EXPIRATION_PACKAGE_NAME) .
 	@echo ""

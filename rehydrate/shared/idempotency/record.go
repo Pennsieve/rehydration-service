@@ -57,10 +57,8 @@ type Record struct {
 
 func NewRecord(id string, status Status) *Record {
 	return &Record{
-		ExpirationIndex: ExpirationIndex{
-			ID:     id,
-			Status: status,
-		}}
+		ID:     id,
+		Status: status}
 }
 
 func (r *Record) WithRehydrationLocation(location string) *Record {

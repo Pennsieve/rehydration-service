@@ -21,7 +21,7 @@ type DynamoDBFixture struct {
 func NewDynamoDBFixture(t *testing.T, awsConfig aws.Config, inputs ...*dynamodb.CreateTableInput) *DynamoDBFixture {
 	client := dynamodb.NewFromConfig(awsConfig)
 	f := DynamoDBFixture{
-		Fixture: Fixture{T: t},
+		T:       t,
 		Client:  client,
 		Tables:  map[string]bool{},
 		context: context.Background(),

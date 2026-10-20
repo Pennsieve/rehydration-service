@@ -54,8 +54,7 @@ func (s *DyDBStore) EmailSent(ctx context.Context, id string, emailSentDate *tim
 		UpdateExpression:                    emailSentExpression.Update(),
 	}
 	if _, err = s.client.UpdateItem(ctx, updateIn); err != nil {
-		var conditionFailedError *types.ConditionalCheckFailedException
-		if errors.As(err, &conditionFailedError) {
+		if conditionFailedError, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 			alreadyExistsError := &EntryAlreadyExistsError{}
 			if existingEntry, err := FromItem(conditionFailedError.Item); err == nil {
 				alreadyExistsError.Existing = existingEntry

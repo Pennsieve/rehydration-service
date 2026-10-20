@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/pennsieve/rehydration-service/fargate/utils"
 	"log/slog"
 )
@@ -28,9 +27,9 @@ func (r *Rehydrator) Copy(ctx context.Context, src Source, dest Destination) err
 	if src.GetSize() < r.ThresholdSize {
 		copyLogger.Info("simple copy")
 		params := s3.CopyObjectInput{
-			Bucket:       aws.String(dest.GetBucket()),
-			CopySource:   aws.String(src.GetCopySource()),
-			Key:          aws.String(dest.GetKey()),
+			Bucket:       new(dest.GetBucket()),
+			CopySource:   new(src.GetCopySource()),
+			Key:          new(dest.GetKey()),
 			RequestPayer: types.RequestPayerRequester,
 		}
 

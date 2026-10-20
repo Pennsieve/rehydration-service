@@ -28,7 +28,7 @@ type S3Fixture struct {
 
 func NewS3Fixture(t *testing.T, client *s3.Client, inputs ...*s3.CreateBucketInput) *S3Fixture {
 	f := S3Fixture{
-		Fixture: Fixture{T: t},
+		T:       t,
 		Client:  client,
 		Buckets: map[string]bool{},
 		context: context.Background(),
@@ -113,8 +113,7 @@ func (f *S3Fixture) ObjectExists(bucket, key string) bool {
 	if err == nil {
 		return true
 	}
-	var notFound *types.NotFound
-	if errors.As(err, &notFound) {
+	if _, ok := errors.AsType[*types.NotFound](err); ok {
 		return false
 	}
 	return assert.NoError(f.T, err, "unexpected error when checking if object exists")
@@ -255,7 +254,7 @@ func AWSErrorToString(bucket string, error types.Error) string {
 
 func GeneratePutObjectInputs(bucket string, prefix string, count int) []*s3.PutObjectInput {
 	var putObjectIns []*s3.PutObjectInput
-	for i := 0; i < count; i++ {
+	for i := range count {
 		name := fmt.Sprintf("file%d.txt", i)
 		key := fmt.Sprintf("%s%s", prefix, name)
 		content := fmt.Sprintf("content of %s\n", name)

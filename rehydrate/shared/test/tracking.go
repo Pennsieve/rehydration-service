@@ -73,15 +73,13 @@ func TrackingCreateTableInput(tableName string) *dynamodb.CreateTableInput {
 
 func NewTestEntry(dataset models.Dataset, user models.User) *tracking.Entry {
 	return &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:                uuid.NewString(),
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: tracking.InProgress,
-		},
-		LambdaLogStream: uuid.NewString(),
-		AWSRequestID:    uuid.NewString(),
-		RequestDate:     time.Now(),
+		ID:                uuid.NewString(),
+		DatasetVersion:    dataset.DatasetVersion(),
+		UserName:          user.Name,
+		UserEmail:         user.Email,
+		RehydrationStatus: tracking.InProgress,
+		LambdaLogStream:   uuid.NewString(),
+		AWSRequestID:      uuid.NewString(),
+		RequestDate:       time.Now(),
 	}
 }

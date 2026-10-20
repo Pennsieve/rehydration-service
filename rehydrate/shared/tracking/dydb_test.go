@@ -39,18 +39,16 @@ func TestDyDBStore_PutEntry(t *testing.T) {
 	requestDate := time.Now()
 	emailSentDate := requestDate.Add(time.Hour + 2)
 	entry := &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:                expectedID,
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          user.Name,
-			UserEmail:         user.Email,
-			RehydrationStatus: tracking.InProgress,
-			EmailSentDate:     &emailSentDate,
-		},
-		LambdaLogStream: expectedLambdaLog,
-		AWSRequestID:    awsRequestID,
-		RequestDate:     requestDate,
-		FargateTaskARN:  "arn:ecs:test::test",
+		ID:                expectedID,
+		DatasetVersion:    dataset.DatasetVersion(),
+		UserName:          user.Name,
+		UserEmail:         user.Email,
+		RehydrationStatus: tracking.InProgress,
+		EmailSentDate:     &emailSentDate,
+		LambdaLogStream:   expectedLambdaLog,
+		AWSRequestID:      awsRequestID,
+		RequestDate:       requestDate,
+		FargateTaskARN:    "arn:ecs:test::test",
 	}
 	err := store.PutEntry(ctx, entry)
 	require.NoError(t, err)
@@ -137,34 +135,30 @@ func TestDyDBStore_QueryDatasetVersionIndex(t *testing.T) {
 	oldCompletedRequestDate := time.Now().Add(-time.Hour * 24)
 	oldCompletedEmailSentData := oldCompletedRequestDate.Add(time.Hour * 12)
 	oldCompletedEntry := &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:                uuid.NewString(),
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          "Hal Blaine",
-			UserEmail:         "hb@example.com",
-			RehydrationStatus: tracking.Completed,
-			EmailSentDate:     &oldCompletedEmailSentData,
-		},
-		LambdaLogStream: uuid.NewString(),
-		AWSRequestID:    uuid.NewString(),
-		RequestDate:     oldCompletedRequestDate,
-		FargateTaskARN:  uuid.NewString(),
+		ID:                uuid.NewString(),
+		DatasetVersion:    dataset.DatasetVersion(),
+		UserName:          "Hal Blaine",
+		UserEmail:         "hb@example.com",
+		RehydrationStatus: tracking.Completed,
+		EmailSentDate:     &oldCompletedEmailSentData,
+		LambdaLogStream:   uuid.NewString(),
+		AWSRequestID:      uuid.NewString(),
+		RequestDate:       oldCompletedRequestDate,
+		FargateTaskARN:    uuid.NewString(),
 	}
 	// An entry from a previous, failed rehydration of the same dataset.
 	// It's already been handled, so the Query being tested should not return it.
 	oldFailedRequestDate := time.Now().Add(-time.Hour * 48)
 	oldFailedEntry := &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:                uuid.NewString(),
-			DatasetVersion:    dataset.DatasetVersion(),
-			UserName:          "Harry Gorman",
-			UserEmail:         "gorman@example.com",
-			RehydrationStatus: tracking.Failed,
-		},
-		LambdaLogStream: uuid.NewString(),
-		AWSRequestID:    uuid.NewString(),
-		RequestDate:     oldFailedRequestDate,
-		FargateTaskARN:  uuid.NewString(),
+		ID:                uuid.NewString(),
+		DatasetVersion:    dataset.DatasetVersion(),
+		UserName:          "Harry Gorman",
+		UserEmail:         "gorman@example.com",
+		RehydrationStatus: tracking.Failed,
+		LambdaLogStream:   uuid.NewString(),
+		AWSRequestID:      uuid.NewString(),
+		RequestDate:       oldFailedRequestDate,
+		FargateTaskARN:    uuid.NewString(),
 	}
 	// New, as yet, unhandled entries. These are the only entries the Query being tested should find.
 	unhandledEntries := []test.Itemer{

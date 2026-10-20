@@ -15,18 +15,16 @@ func TestEntry_ItemRoundTrip(t *testing.T) {
 	requestDate := emailSentDate.Add(-time.Hour * 3)
 
 	entry := &tracking.Entry{
-		DatasetVersionIndex: tracking.DatasetVersionIndex{
-			ID:                uuid.NewString(),
-			DatasetVersion:    "451/3/",
-			UserName:          "First Last",
-			UserEmail:         "last@example.com",
-			RehydrationStatus: tracking.Completed,
-			EmailSentDate:     &emailSentDate,
-		},
-		LambdaLogStream: "/lambda/log/stream/name",
-		AWSRequestID:    "REQUEST-1234",
-		RequestDate:     requestDate,
-		FargateTaskARN:  "arn:ecs:test:test:test",
+		ID:                uuid.NewString(),
+		DatasetVersion:    "451/3/",
+		UserName:          "First Last",
+		UserEmail:         "last@example.com",
+		RehydrationStatus: tracking.Completed,
+		EmailSentDate:     &emailSentDate,
+		LambdaLogStream:   "/lambda/log/stream/name",
+		AWSRequestID:      "REQUEST-1234",
+		RequestDate:       requestDate,
+		FargateTaskARN:    "arn:ecs:test:test:test",
 	}
 
 	item, err := entry.Item()

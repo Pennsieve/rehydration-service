@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine
+FROM golang:1.27-alpine
 
 WORKDIR /usr/src/shared
 
@@ -7,7 +7,7 @@ COPY shared ./
 WORKDIR /usr/src/app
 
 COPY fargate ./
-RUN go mod tidy
+RUN go mod download
 
 
 RUN go build -v -o /usr/local/bin/app .

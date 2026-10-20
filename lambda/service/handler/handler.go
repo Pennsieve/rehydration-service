@@ -45,8 +45,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	rehydrationRequest, err := request.NewRehydrationRequest(lambdaRequest, handlerConfig.RehydrationTTLDays)
 	if err != nil {
 		logger.Error("error creating RehydrationRequest", "error", err)
-		var badRequest *request.BadRequestError
-		if errors.As(err, &badRequest) {
+		if _, ok := errors.AsType[*request.BadRequestError](err); ok {
 			return lambdautils.ErrorResponse(http.StatusBadRequest, err, lambdaRequest)
 		}
 		return lambdautils.ErrorResponse(http.StatusInternalServerError, err, lambdaRequest)
@@ -74,8 +73,7 @@ func RehydrationServiceHandler(ctx context.Context, lambdaRequest events.APIGate
 	out, err := handler.Handle(ctx)
 	if err != nil {
 		rehydrationRequest.Logger.Error("error handling RehydrationRequest", "error", err)
-		var expiredError idempotency.ExpiredError
-		if errors.As(err, &expiredError) {
+		if _, ok := errors.AsType[idempotency.ExpiredError](err); ok {
 			rehydrationRequest.WriteNewExpiredRequest(ctx, trackingStore)
 		} else {
 			// Maybe we should be writing failed to the tracking table in this case?

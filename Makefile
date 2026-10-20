@@ -26,13 +26,14 @@ go-get:
 	cd $(WORKING_DIR)/lambda/expiration; \
         go get github.com/pennsieve/rehydration-service/expiration
 
+GO_MODULES := lambda/service rehydrate/fargate rehydrate/shared lambda/expiration
+
 # Run go mod tidy on modules
 tidy:
-	cd ${WORKING_DIR}/lambda/service; go mod tidy
-	cd ${WORKING_DIR}/rehydrate/fargate; go mod tidy
-	cd ${WORKING_DIR}/rehydrate/shared; go mod tidy
-	cd ${WORKING_DIR}/lambda/expiration; go mod tidy
+	for dir in $(GO_MODULES); do go -C ${WORKING_DIR}/$$dir mod tidy; done
 
+vet:
+	for dir in $(GO_MODULES); do go -C ${WORKING_DIR}/$$dir vet ./...; done
 
 npm-install:
 	npm install
@@ -62,7 +63,7 @@ test: local-services email-templates
 test-ci: docker-clean
 	docker-compose -f docker-compose.test-ci.yaml down --remove-orphans
 	# --build forces the test image to rebuild from Dockerfile.test, so a bumped
-	# base image (e.g. golang:1.24-alpine) is actually picked up instead of a
+	# base image (e.g. golang:1.27-alpine) is actually picked up instead of a
 	# stale cached image. Without it, docker-compose reuses an old image and the
 	# tests run under the previous Go version.
 	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test-ci.yaml up --build --exit-code-from=tests-ci tests-ci
@@ -83,7 +84,7 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/service; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/service/bootstrap; \
+  		env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o $(LAMBDA_BIN)/service/bootstrap; \
 		cd $(LAMBDA_BIN)/service/ ; \
 			zip -r $(LAMBDA_BIN)/service/$(SERVICE_PACKAGE_NAME) .
 	@echo ""
@@ -92,7 +93,7 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/expiration; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(LAMBDA_BIN)/expiration/bootstrap; \
+  		env GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o $(LAMBDA_BIN)/expiration/bootstrap; \
 		cd $(LAMBDA_BIN)/expiration/ ; \
 			zip -r $(LAMBDA_BIN)/expiration/$(EXPIRATION_PACKAGE_NAME) .
 	@echo ""

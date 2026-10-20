@@ -14,7 +14,7 @@ func TestNewTestDatasetFiles(t *testing.T) {
 
 	files := testDatasetFiles.Files
 
-	for i := 0; i < len(files); i++ {
+	for i := range files {
 		byPath := testDatasetFiles.ByPath[files[i].Path]
 		assert.Same(t, &files[i], byPath)
 		assert.NotEmpty(t, files[i].S3VersionID)
